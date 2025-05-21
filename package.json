@@ -1,0 +1,25 @@
+{
+  "name": "@jameslnewell/git-diff",
+  "version": "0.1.0",
+  "type": "module",
+  "devDependencies": {
+    "@jameslnewell/prettier-config": "^1.2.1",
+    "@jameslnewell/typescript-config": "^5.0.1",
+    "@types/node": "^22.15.21",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3"
+  },
+  "prettier": "@jameslnewell/prettier-config",
+  "scripts": {
+    "formatting": "prettier --check .",
+    "formatting:fix": "prettier --write .",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@types/picomatch": "^4.0.0",
+    "fast-glob": "^3.3.3",
+    "picomatch": "^4.0.2"
+  }
+}
