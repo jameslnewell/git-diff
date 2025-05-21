@@ -1,7 +1,9 @@
 import {promisify} from 'node:util'
 import {execFile, execFileSync} from 'node:child_process'
 import glob from 'picomatch'
+import debug from 'debug'
 
+const log = debug('git-diff')
 const execFileAsync = promisify(execFile);
 
 export type DiffPath = string
@@ -165,7 +167,9 @@ export interface DiffOptions {
  */
 export async function diffAsync(options: DiffOptions = {}): Promise<Diff> {
   // TODO: use first commit if base ref doesn't exist
-  const {stdout} = await execFileAsync(...execFileArgs(options))
+  const args = execFileArgs(options)
+  log('diffAsync', ...args);
+  const {stdout} = await execFileAsync(...args)
   return parse(stdout);
 }
 
@@ -174,7 +178,9 @@ export async function diffAsync(options: DiffOptions = {}): Promise<Diff> {
  */
 export function diffSync(options: DiffOptions = {}): Diff {
   // TODO: use first commit if base ref doesn't exist
-  const stdout = execFileSync(...execFileArgs(options));
+  const args = execFileArgs(options)
+  log('diffSync', ...args);
+  const stdout = execFileSync(...args);
   return parse(stdout);
 }
 

@@ -127,7 +127,7 @@ const d = new Diff([
 test('diffAsync()', async () => {
   const x = await diffAsync({
     head: 'main',
-    base: 'xxx',
+    base: 'e740b69',
   })
-  console.log(x)
+  console.log(x.entries().toArray())
 })
