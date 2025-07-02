@@ -2,6 +2,7 @@
   "name": "@jameslnewell/git-diff",
   "version": "0.1.0",
   "type": "module",
+  "main": "dist/diff.js",
   "devDependencies": {
     "@jameslnewell/prettier-config": "^1.2.1",
     "@jameslnewell/typescript-config": "^5.0.1",
@@ -16,7 +17,9 @@
     "formatting:fix": "prettier --write .",
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\""
+    "test": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "test:watch": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --test --watch \"src/**/*.test.ts\"",
+    "dev": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types dev.ts"
   },
   "dependencies": {
     "@types/picomatch": "^4.0.0",

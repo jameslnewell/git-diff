@@ -1,133 +1,100 @@
+import { suite, test } from 'node:test'
+import {Diff, Status} from './diff.ts'
+import { deepEqual, equal } from 'node:assert'
 
-
-import {suite, test} from 'node:test'
-import {deepEqual} from 'node:assert/strict'
-import {Diff, diffAsync} from './diff.ts'
-
-const stdout =
-`
-A       .editorconfig
-M       .gitignore
-D       package-lock.json
-A       package.json
-M       src/Diff.ts
-A       tsconfig.json
-`
-
-
-suite(Diff.name, () => {
-  suite('.filter()', () => {
-    test('filter by status', () => {
-      const diff = new Diff([
-        ['.editorconfig', 'A'],
-        ['.gitignore', 'M'],
-        ['package-lock.json', 'D'],
-        ['package.json', 'A'],
-        ['src/Diff.ts', 'M'],
-        ['tsconfig.json', 'A'],
-      ]);
-
-      const added = diff.filter({statuses: ['A']});
-
-      deepEqual(Array.from(added.entries()), [
-        ['.editorconfig', 'A'],
-        ['package.json', 'A'],
-        ['tsconfig.json', 'A'],
-      ]);
-
-      const modifiedDiff = diff.filter({statuses: ['M']});
-
-      deepEqual(Array.from(modifiedDiff.entries()), [
-        ['.gitignore', 'M'],
-        ['src/Diff.ts', 'M'],
-      ]);
-    });
-
-    test('filter by path', () => {
-      const diff = new Diff([
-        ['.editorconfig', 'A'],
-        ['.gitignore', 'M'],
-        ['package-lock.json', 'D'],
-        ['package.json', 'A'],
-        ['src/Diff.ts', 'M'],
-        ['tsconfig.json', 'A'],
-      ]);
-
-      const jsonDiff = diff.filter({paths: ['*.json']});
-
-      deepEqual(Array.from(jsonDiff.entries()), [
-        ['package-lock.json', 'D'],
-        ['package.json', 'A'],
-        ['tsconfig.json', 'A'],
-      ]);
-    });
-
-    test('filter by path and status', () => {
-      const diff = new Diff([
-        ['.editorconfig', 'A'],
-        ['.gitignore', 'M'],
-        ['package-lock.json', 'D'],
-        ['package.json', 'A'],
-        ['src/Diff.ts', 'M'],
-        ['tsconfig.json', 'A'],
-      ]);
-
-      const addedJson = diff.filter({paths: ['*.json'], statuses: ['A']});
-
-      deepEqual(Array.from(addedJson.entries()), [
-        ['package.json', 'A'],
-        ['tsconfig.json', 'A'],
-      ]);
-    });
-
-    test('filter with no matches', () => {
-      const diff = new Diff([
-        ['.editorconfig', 'A'],
-        ['.gitignore', 'M'],
-      ]);
-
-      const result = diff.filter({paths: ['*.md'], statuses: ['D']});
-
-      deepEqual(Array.from(result.entries()), []);
-    });
-  })
-  suite('.contains()', () => {
-    test('contains path', () => {
-      const diff = new Diff([
-        ['.editorconfig', 'A'],
-        ['.gitignore', 'M'],
-      ]);
-
-      const result = diff.contains({paths: ['.gitignore']});
-
-      deepEqual(result, true);
-    });
-
-    test('does not contain path', () => {
-      const diff = new Diff([
-        ['.editorconfig', 'A'],
-        ['.gitignore', 'M'],
-      ]);
-
-      const result = diff.contains({paths: ['README.md']});
-
-      deepEqual(result, false);
-    });
-  })
-});
-
-const d = new Diff([
-  ['.editorconfig', 'A'],
-  ['.gitignore', 'M'],
-  ['package-lock.json', 'D'],
-  ['package.json', 'A'],
-  ['src/Diff.ts', 'M'],
+const diff = new Diff([
+  ['package.json', Status.Unknown],
+  ['src/main.ts', Status.Added],
+  ['src/index.ts', Status.Deleted],
+  ['src/utils.ts', Status.Modified],
+  ['src/utils.test.ts', Status.Renamed],
+  ['tsconfig.json', Status.Unknown],
 ])
 
-test('diffAsync()', async () => {
-  const x = await diffAsync({
-    head: 'main',
-    base: 'e740b69',
+suite(Diff.name, () => {
+
+  suite('.count()', () => {
+    test('returns the number of files in the diff', () => {
+      equal(diff.size(), 6)
+    })
   })
-  console.log(x.entries().toArray())
+
+  suite('.paths()', () => {
+    test('returns the paths in the diff', () => {
+      deepEqual(Array.from(diff.paths()), [
+        'package.json',
+        'src/main.ts',
+        'src/index.ts',
+        'src/utils.ts',
+        'src/utils.test.ts',
+        'tsconfig.json',
+      ])
+    })
+  })
+
+  suite('.statuses()', () => {
+    test('returns the number of files in the diff', () => {
+      deepEqual(Array.from(diff.statuses()), [
+        Status.Unknown,
+        Status.Added,
+        Status.Deleted,
+        Status.Modified,
+        Status.Renamed,
+        Status.Unknown,
+      ])
+    })
+  })
+
+  suite('.match()', () => {
+    test('.added', () => {
+      const match = diff.match('src/main.ts')
+      equal(match.added, true)
+      equal(match.changed, false)
+      equal(match.deleted, false)
+      equal(match.modified, false)
+      equal(match.renamed, false)
+      equal(match.unknown, false)
+    })
+
+    test('.deleted', () => {
+      const match = diff.match('src/index.ts')
+      equal(match.added, false)
+      equal(match.changed, false)
+      equal(match.deleted, true)
+      equal(match.modified, false)
+      equal(match.renamed, false)
+      equal(match.unknown, false)
+    })
+
+    test('.modified', () => {
+      const match = diff.match('src/utils.ts')
+      equal(match.added, false)
+      equal(match.changed, false)
+      equal(match.deleted, false)
+      equal(match.modified, true)
+      equal(match.renamed, false)
+      equal(match.unknown, false)
+    })
+
+    test('.renamed', () => {
+      const match = diff.match('src/utils.test.ts')
+      equal(match.added, false)
+      equal(match.changed, false)
+      equal(match.deleted, false)
+      equal(match.modified, false)
+      equal(match.renamed, true)
+      equal(match.unknown, false)
+    })
+
+    test('.unknown', () => {
+      const match = diff.match('tsconfig.json')
+      equal(match.added, false)
+      equal(match.changed, false)
+      equal(match.deleted, false)
+      equal(match.modified, false)
+      equal(match.renamed, false)
+      equal(match.unknown, true)
+    })
+
+  })
 })
