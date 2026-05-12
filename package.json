@@ -1,5 +1,9 @@
 {
   "name": "@jameslnewell/git-diff",
+  "author": {
+    "name": "James Newell",
+    "email": "gday@jameslnewell.dev"
+  },
   "version": "0.1.0",
   "type": "module",
   "main": "dist/diff.js",
