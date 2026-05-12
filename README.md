@@ -19,14 +19,14 @@ npm install @jameslnewell/git-diff
 ### Async Diff
 
 ```typescript
-import { diffAsync } from '@jameslnewell/git-diff';
+import {diffAsync} from '@jameslnewell/git-diff';
 
 const diff = await diffAsync({
   base: 'main',
   head: 'feature-branch',
 });
 
-const match = diff.match('prisma/*')
+const match = diff.match('prisma/*');
 
 if (match.added || match.modified) {
   // do something
@@ -37,14 +37,14 @@ if (match.added || match.modified) {
 ### Sync Diff
 
 ```typescript
-import { diffSync } from '@jameslnewell/git-diff';
+import {diffSync} from '@jameslnewell/git-diff';
 
 const diff = diffSync({
   base: 'main',
   head: 'feature-branch',
 });
 
-const match = diff.match('prisma/*')
+const match = diff.match('prisma/*');
 
 if (match.added || match.modified) {
   // do something
@@ -55,8 +55,9 @@ if (match.added || match.modified) {
 ### Handling a non-existent `base`
 
 A common use case is diffing against a mutable tag on CI/CD.
+
 ```ts
-import { diffAsync } from '@jameslnewell/git-diff';
+import {diffAsync} from '@jameslnewell/git-diff';
 
 const diff = await diffAsync({
   base: 'last-deployment',
@@ -69,12 +70,12 @@ On the initial CI/CD run the mutable tag may not yet exist and `git diff` will e
 In order to handle this case its recommended you diff against the first commit instead.
 
 ```ts
-import { Diff, diffAsync, firstCommitAsync } from '@jameslnewell/git-diff';
+import {Diff, diffAsync, firstCommitAsync} from '@jameslnewell/git-diff';
 
-const base = 'last-deployment'
-const head = 'HEAD'
+const base = 'last-deployment';
+const head = 'HEAD';
 
-let diff: Diff
+let diff: Diff;
 try {
   diff = await diffAsync({
     base,
@@ -87,10 +88,9 @@ try {
       head,
     });
   } else {
-    throw error
+    throw error;
   }
 }
-
 ```
 
 ## License
