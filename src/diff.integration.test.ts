@@ -1,18 +1,13 @@
 import {suite, test} from 'node:test';
 import {rejects, throws} from 'node:assert/strict';
-import {
-  diffAsync,
-  diffSync,
-  firstCommitAsync,
-  firstCommitSync,
-} from './diff.ts';
 import {equal} from 'node:assert';
+import * as Diff from './diff.ts';
 
-suite(diffAsync.name, () => {
+suite(Diff.diffAsync.name, () => {
   test('throws for bad revision', async () => {
     await rejects(
       () =>
-        diffAsync({
+        Diff.diffAsync({
           cwd: import.meta.dirname,
           base: 'non-existent-ref',
           head: 'HEAD',
@@ -26,24 +21,24 @@ suite(diffAsync.name, () => {
   });
 
   test('since initial commit', async () => {
-    const diff = await diffAsync({
+    const diff = await Diff.diffAsync({
       cwd: import.meta.dirname,
       base: 'e740b69fbf63d6e76af21efa4c356483ebf5b2f4',
       head: 'HEAD',
     });
 
-    const paths = Array.from(diff.paths());
+    const paths = Diff.paths(diff);
     equal(paths.includes('README.md'), true);
     equal(paths.includes('package.json'), true);
     equal(paths.includes('src/diff.ts'), true);
   });
 });
 
-suite(diffSync.name, () => {
+suite(Diff.diffSync.name, () => {
   test('throws for bad revision', () => {
     throws(
       () =>
-        diffSync({
+        Diff.diffSync({
           cwd: import.meta.dirname,
           base: 'non-existent-ref',
           head: 'HEAD',
@@ -57,29 +52,29 @@ suite(diffSync.name, () => {
   });
 
   test('since initial commit', () => {
-    const diff = diffSync({
+    const diff = Diff.diffSync({
       cwd: import.meta.dirname,
       base: 'e740b69fbf63d6e76af21efa4c356483ebf5b2f4',
       head: 'HEAD',
     });
 
-    const paths = Array.from(diff.paths());
+    const paths = Diff.paths(diff);
     equal(paths.includes('README.md'), true);
     equal(paths.includes('package.json'), true);
     equal(paths.includes('src/diff.ts'), true);
   });
 });
 
-suite(firstCommitAsync.name, () => {
+suite(Diff.firstCommitAsync.name, () => {
   test('returns the first commit', async () => {
-    const commit = await firstCommitAsync();
+    const commit = await Diff.firstCommitAsync();
     equal(commit, 'e740b69fbf63d6e76af21efa4c356483ebf5b2f4');
   });
 });
 
-suite(firstCommitSync.name, () => {
+suite(Diff.firstCommitSync.name, () => {
   test('returns the first commit', () => {
-    const commit = firstCommitSync();
+    const commit = Diff.firstCommitSync();
     equal(commit, 'e740b69fbf63d6e76af21efa4c356483ebf5b2f4');
   });
 });
