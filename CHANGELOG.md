@@ -1,3 +1,15 @@
+# v0.2.0 (Wed May 13 2026)
+
+#### 🚀 Enhancement
+
+- Use namespace imports in tests [#4](https://github.com/jameslnewell/git-diff/pull/4) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.1.2 (Wed May 13 2026)
 
 #### 🐛 Bug Fix
