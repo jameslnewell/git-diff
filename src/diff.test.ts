@@ -1,98 +1,254 @@
 import {suite, test} from 'node:test';
-import {Diff, Status} from './diff.ts';
+import {
+  Status,
+  filterByPaths,
+  filterByStatuses,
+  paths,
+  statuses,
+  any,
+  added,
+  changed,
+  deleted,
+  modified,
+  renamed,
+  unknown,
+  type Diff,
+} from './diff.ts';
 import {deepEqual, equal} from 'node:assert';
 
-const diff = new Diff([
-  ['package.json', Status.Unknown],
-  ['src/main.ts', Status.Added],
-  ['src/index.ts', Status.Deleted],
-  ['src/utils.ts', Status.Modified],
-  ['src/utils.test.ts', Status.Renamed],
-  ['tsconfig.json', Status.Unknown],
-]);
+const diff: Diff = {
+  'package.json': Status.Unknown,
+  'src/main.ts': Status.Added,
+  'src/index.ts': Status.Deleted,
+  'src/utils.ts': Status.Modified,
+  'src/utils.test.ts': Status.Renamed,
+  'tsconfig.json': Status.Unknown,
+};
 
-suite(Diff.name, () => {
-  suite('.count()', () => {
-    test('returns the number of files in the diff', () => {
-      equal(diff.size(), 6);
+suite(filterByPaths.name, () => {
+  test('keeps entries whose path matches a glob', () => {
+    deepEqual(filterByPaths(diff, ['src/**']), {
+      'src/main.ts': Status.Added,
+      'src/index.ts': Status.Deleted,
+      'src/utils.ts': Status.Modified,
+      'src/utils.test.ts': Status.Renamed,
     });
   });
 
-  suite('.paths()', () => {
-    test('returns the paths in the diff', () => {
-      deepEqual(Array.from(diff.paths()), [
-        'package.json',
-        'src/main.ts',
-        'src/index.ts',
-        'src/utils.ts',
-        'src/utils.test.ts',
-        'tsconfig.json',
-      ]);
+  test('accepts multiple globs (OR)', () => {
+    deepEqual(filterByPaths(diff, ['*.json', 'src/main.ts']), {
+      'package.json': Status.Unknown,
+      'src/main.ts': Status.Added,
+      'tsconfig.json': Status.Unknown,
     });
   });
 
-  suite('.statuses()', () => {
-    test('returns the number of files in the diff', () => {
-      deepEqual(Array.from(diff.statuses()), [
-        Status.Unknown,
-        Status.Added,
-        Status.Deleted,
-        Status.Modified,
-        Status.Renamed,
-        Status.Unknown,
-      ]);
+  test('returns empty diff when nothing matches', () => {
+    deepEqual(filterByPaths(diff, ['no/such/path']), {});
+  });
+
+  test('returns empty diff for an empty input', () => {
+    deepEqual(filterByPaths({}, ['src/**']), {});
+  });
+});
+
+suite(filterByStatuses.name, () => {
+  test('keeps entries whose status is in the list', () => {
+    deepEqual(filterByStatuses(diff, [Status.Added]), {
+      'src/main.ts': Status.Added,
     });
   });
 
-  suite('.match()', () => {
-    test('.added', () => {
-      const match = diff.match('src/main.ts');
-      equal(match.added, true);
-      equal(match.changed, false);
-      equal(match.deleted, false);
-      equal(match.modified, false);
-      equal(match.renamed, false);
-      equal(match.unknown, false);
+  test('accepts multiple statuses (OR)', () => {
+    deepEqual(filterByStatuses(diff, [Status.Added, Status.Modified]), {
+      'src/main.ts': Status.Added,
+      'src/utils.ts': Status.Modified,
     });
+  });
 
-    test('.deleted', () => {
-      const match = diff.match('src/index.ts');
-      equal(match.added, false);
-      equal(match.changed, false);
-      equal(match.deleted, true);
-      equal(match.modified, false);
-      equal(match.renamed, false);
-      equal(match.unknown, false);
-    });
+  test('returns empty diff when no entry has the status', () => {
+    deepEqual(filterByStatuses(diff, [Status.Changed]), {});
+  });
 
-    test('.modified', () => {
-      const match = diff.match('src/utils.ts');
-      equal(match.added, false);
-      equal(match.changed, false);
-      equal(match.deleted, false);
-      equal(match.modified, true);
-      equal(match.renamed, false);
-      equal(match.unknown, false);
-    });
+  test('returns empty diff for an empty input', () => {
+    deepEqual(filterByStatuses({}, [Status.Added]), {});
+  });
+});
 
-    test('.renamed', () => {
-      const match = diff.match('src/utils.test.ts');
-      equal(match.added, false);
-      equal(match.changed, false);
-      equal(match.deleted, false);
-      equal(match.modified, false);
-      equal(match.renamed, true);
-      equal(match.unknown, false);
-    });
+suite(paths.name, () => {
+  test('returns the paths in insertion order', () => {
+    deepEqual(paths(diff), [
+      'package.json',
+      'src/main.ts',
+      'src/index.ts',
+      'src/utils.ts',
+      'src/utils.test.ts',
+      'tsconfig.json',
+    ]);
+  });
 
-    test('.unknown', () => {
-      const match = diff.match('tsconfig.json');
-      equal(match.added, false);
-      equal(match.changed, false);
-      equal(match.deleted, false);
-      equal(match.modified, false);
-      equal(match.renamed, false);
-      equal(match.unknown, true);
-    });
+  test('returns [] for an empty diff', () => {
+    deepEqual(paths({}), []);
+  });
+});
+
+suite(statuses.name, () => {
+  test('returns the statuses in insertion order', () => {
+    deepEqual(statuses(diff), [
+      Status.Unknown,
+      Status.Added,
+      Status.Deleted,
+      Status.Modified,
+      Status.Renamed,
+      Status.Unknown,
+    ]);
+  });
+
+  test('returns [] for an empty diff', () => {
+    deepEqual(statuses({}), []);
+  });
+});
+
+suite(any.name, () => {
+  test('returns true for a non-empty diff with no paths arg', () => {
+    equal(any(diff), true);
+  });
+
+  test('returns false for an empty diff with no paths arg', () => {
+    equal(any({}), false);
+  });
+
+  test('returns true when a path matches', () => {
+    equal(any(diff, 'src/main.ts'), true);
+  });
+
+  test('returns true when a glob matches', () => {
+    equal(any(diff, 'src/**'), true);
+  });
+
+  test('accepts an array of globs', () => {
+    equal(any(diff, ['no/match', 'package.json']), true);
+  });
+
+  test('returns false when nothing matches', () => {
+    equal(any(diff, 'no/such/path'), false);
+  });
+});
+
+suite(added.name, () => {
+  test('returns true when an entry is Added', () => {
+    equal(added(diff), true);
+  });
+
+  test('returns false when no entry is Added', () => {
+    equal(added({'a.ts': Status.Modified}), false);
+  });
+
+  test('with paths: true when an Added entry matches the glob', () => {
+    equal(added(diff, 'src/**'), true);
+  });
+
+  test('with paths: false when path matches but no Added entry', () => {
+    equal(added(diff, 'tsconfig.json'), false);
+  });
+
+  test('with paths: false when status matches but no path matches', () => {
+    equal(added(diff, 'no/such/path'), false);
+  });
+
+  test('returns false for an empty diff', () => {
+    equal(added({}), false);
+  });
+});
+
+suite(changed.name, () => {
+  const withChanged: Diff = {'a.ts': Status.Changed, 'b.ts': Status.Added};
+
+  test('returns true when an entry is Changed', () => {
+    equal(changed(withChanged), true);
+  });
+
+  test('returns false when no entry is Changed', () => {
+    equal(changed(diff), false);
+  });
+
+  test('with paths: true when a Changed entry matches', () => {
+    equal(changed(withChanged, 'a.ts'), true);
+  });
+
+  test('with paths: false when path matches but no Changed entry', () => {
+    equal(changed(withChanged, 'b.ts'), false);
+  });
+});
+
+suite(deleted.name, () => {
+  test('returns true when an entry is Deleted', () => {
+    equal(deleted(diff), true);
+  });
+
+  test('returns false when no entry is Deleted', () => {
+    equal(deleted({'a.ts': Status.Added}), false);
+  });
+
+  test('with paths: true when a Deleted entry matches', () => {
+    equal(deleted(diff, 'src/index.ts'), true);
+  });
+
+  test('with paths: false when path matches but no Deleted entry', () => {
+    equal(deleted(diff, 'src/main.ts'), false);
+  });
+});
+
+suite(modified.name, () => {
+  test('returns true when an entry is Modified', () => {
+    equal(modified(diff), true);
+  });
+
+  test('returns false when no entry is Modified', () => {
+    equal(modified({'a.ts': Status.Added}), false);
+  });
+
+  test('with paths: true when a Modified entry matches', () => {
+    equal(modified(diff, 'src/utils.ts'), true);
+  });
+
+  test('with paths: false when path matches but no Modified entry', () => {
+    equal(modified(diff, 'src/main.ts'), false);
+  });
+});
+
+suite(renamed.name, () => {
+  test('returns true when an entry is Renamed', () => {
+    equal(renamed(diff), true);
+  });
+
+  test('returns false when no entry is Renamed', () => {
+    equal(renamed({'a.ts': Status.Added}), false);
+  });
+
+  test('with paths: true when a Renamed entry matches', () => {
+    equal(renamed(diff, 'src/utils.test.ts'), true);
+  });
+
+  test('with paths: false when path matches but no Renamed entry', () => {
+    equal(renamed(diff, 'src/main.ts'), false);
+  });
+});
+
+suite(unknown.name, () => {
+  test('returns true when an entry is Unknown', () => {
+    equal(unknown(diff), true);
+  });
+
+  test('returns false when no entry is Unknown', () => {
+    equal(unknown({'a.ts': Status.Added}), false);
+  });
+
+  test('with paths: true when an Unknown entry matches', () => {
+    equal(unknown(diff, '*.json'), true);
+  });
+
+  test('with paths: false when path matches but no Unknown entry', () => {
+    equal(unknown(diff, 'src/main.ts'), false);
   });
 });

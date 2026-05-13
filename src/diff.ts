@@ -8,7 +8,6 @@ const execSyncLog = debug('git-diff:execSync');
 
 const execFileAsync = promisify(execFile);
 
-const errorName = 'GitDiffError';
 const badRevisionErrorCode = 'BAD_REVISION';
 
 export type Path = string;
@@ -22,20 +21,88 @@ export const Status = {
   Unknown: 'X' as const,
 };
 
-interface Match {
-  readonly added: boolean;
-  readonly changed: boolean;
-  readonly deleted: boolean;
-  readonly modified: boolean;
-  readonly renamed: boolean;
-  readonly unknown: boolean;
+export type Diff = Record<Path, Status>;
+
+function toArray<T>(value: T | T[]): T[] {
+  return Array.isArray(value) ? value : [value];
 }
 
-/**
- * Cast a value to an array if its not already an array
- */
-export function toArray<T>(value: T | T[] | undefined): T[] {
-  return Array.isArray(value) ? value : value ? [value] : [];
+function empty(diff: Diff): boolean {
+  for (const _ in diff) return false;
+  return true;
+}
+
+export function filterByPaths(diff: Diff, paths: Path[]): Diff {
+  const matcher = glob(paths);
+  const out: Diff = {};
+  for (const [p, status] of Object.entries(diff)) {
+    if (matcher(p)) out[p] = status;
+  }
+  return out;
+}
+
+export function filterByStatuses(diff: Diff, statuses: Status[]): Diff {
+  const allowed = new Set<Status>(statuses);
+  const out: Diff = {};
+  for (const [p, status] of Object.entries(diff)) {
+    if (allowed.has(status)) out[p] = status;
+  }
+  return out;
+}
+
+export function paths(diff: Diff): Path[] {
+  return Object.keys(diff);
+}
+
+export function statuses(diff: Diff): Status[] {
+  return Object.values(diff) as Status[];
+}
+
+function containsPathsWithStatus(
+  diff: Diff,
+  status: Status,
+  paths?: Path | Path[],
+): boolean {
+  const matcher = paths !== undefined ? glob(toArray(paths)) : null;
+  for (const [p, s] of Object.entries(diff)) {
+    if (s !== status) continue;
+    if (matcher && !matcher(p)) continue;
+    return true;
+  }
+  return false;
+}
+
+export function any(diff: Diff, paths?: Path | Path[]): boolean {
+  if (paths === undefined) return !empty(diff);
+  const matcher = glob(toArray(paths));
+  for (const p in diff) {
+    if (matcher(p)) return true;
+  }
+  return false;
+}
+
+export function added(diff: Diff, paths?: Path | Path[]): boolean {
+  return containsPathsWithStatus(diff, Status.Added, paths);
+}
+
+export function changed(diff: Diff, paths?: Path | Path[]): boolean {
+  return containsPathsWithStatus(diff, Status.Changed, paths);
+}
+
+export function deleted(diff: Diff, paths?: Path | Path[]): boolean {
+  return containsPathsWithStatus(diff, Status.Deleted, paths);
+}
+
+export function modified(diff: Diff, paths?: Path | Path[]): boolean {
+  return containsPathsWithStatus(diff, Status.Modified, paths);
+}
+
+export function renamed(diff: Diff, paths?: Path | Path[]): boolean {
+  return containsPathsWithStatus(diff, Status.Renamed, paths);
+}
+
+export function unknown(diff: Diff, paths?: Path | Path[]): boolean {
+  return containsPathsWithStatus(diff, Status.Unknown, paths);
 }
 
 async function execAsync(
@@ -63,119 +130,34 @@ function execSync(
   return execFileSync(cmd, args, options).toString();
 }
 
-/**
- * A git diff result
- */
-export class Diff implements Iterable<[Path, Status]> {
-  #diff: Map<Path, Status>;
-
-  /**
-   * Constructs a diff
-   */
-  constructor(
-    diff: Map<Path, Status> | Iterable<readonly [Path, Status]> = new Map(),
-  ) {
-    this.#diff = diff instanceof Map ? diff : new Map(diff);
-  }
-
-  [Symbol.iterator](): IterableIterator<[Path, Status]> {
-    return this.#diff[Symbol.iterator]();
-  }
-
-  /**
-   * Get the number of files in the diff
-   */
-  size(): number {
-    return this.#diff.size;
-  }
-
-  /**
-   * Get the status and path for each entry in the diff
-   */
-  entries(): MapIterator<[Path, Status]> {
-    return this.#diff.entries();
-  }
-
-  /**
-   * Get the paths in the diff
-   */
-  paths(): MapIterator<Path> {
-    return this.#diff.keys();
-  }
-
-  /**
-   * Get the statuses in the diff
-   */
-  statuses(): MapIterator<Status> {
-    return this.#diff.values();
-  }
-
-  /**
-   * Match the path(s)
-   */
-  match(pathOrPaths: Path | Path[]): Match {
-    const diff = this.#diff;
-    const matcher = glob(toArray(pathOrPaths));
-    return {
-      get added() {
-        return diff.entries().some(([path, status]) => {
-          return status === Status.Added && matcher(path);
-        });
-      },
-      get changed() {
-        return diff.entries().some(([path, status]) => {
-          return status === Status.Changed && matcher(path);
-        });
-      },
-      get deleted() {
-        return diff.entries().some(([path, status]) => {
-          return status === Status.Deleted && matcher(path);
-        });
-      },
-      get modified() {
-        return diff.entries().some(([path, status]) => {
-          return status === Status.Modified && matcher(path);
-        });
-      },
-      get renamed() {
-        return diff.entries().some(([path, status]) => {
-          return status === Status.Renamed && matcher(path);
-        });
-      },
-      get unknown() {
-        return diff.entries().some(([path, status]) => {
-          return status === Status.Unknown && matcher(path);
-        });
-      },
-    };
+class GitDiffError extends Error {
+  override readonly name = 'GitDiffError';
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.code = code;
   }
 }
 
-/**
- * Chceks whether the error has a `stderr` property
- */
 function isErrorWithStderr(error: unknown): error is {stderr: string} {
-  return error instanceof Error && !!(error as any).stderr;
+  return error instanceof Error && !!(error as {stderr?: string}).stderr;
 }
 
-/**
- * Throws a git diff error
- */
 function throwGitDiffError(error: unknown): void {
   if (isErrorWithStderr(error)) {
     const match = /fatal: bad revision '(.*)'/.exec(error.stderr);
     if (match) {
-      const error = new Error(`The ref does not exist: ${match[1]}`);
-      (error as any).name = errorName;
-      (error as any).code = badRevisionErrorCode;
-      throw error;
+      throw new GitDiffError(
+        `The ref does not exist: ${match[1]}`,
+        badRevisionErrorCode,
+      );
     }
   }
 }
 
-/** Parse the stdout of `git diff` and populate a Diff class  */
+/** Parse the stdout of `git diff` into a Diff record */
 function parse(stdout: string): Diff {
-  const map: Map<Path, Status> = new Map();
+  const diff: Diff = {};
 
   for (const line of stdout.split('\n')) {
     if (!line) continue;
@@ -184,14 +166,14 @@ function parse(stdout: string): Diff {
       const status = match[1]?.trim();
       const path = match[2]?.trim();
       if (status && path) {
-        map.set(path, status as Status);
+        diff[path] = status as Status;
         continue;
       }
     }
     throw new Error(`Invalid line in diff output: ${line}`);
   }
 
-  return new Diff(map);
+  return diff;
 }
 
 export interface DiffOptions {
@@ -237,8 +219,7 @@ function diffArgs(
       '--name-status',
       ...(options.base ? [options.base] : []),
       ...(options.head ? [options.head] : []),
-      '--', // this is required to avoid amniguous revision errors
-      // ...(options.paths || []),
+      '--', // this is required to avoid ambiguous revision errors
     ],
     {encoding: 'utf8', cwd: options.cwd},
   ];
@@ -260,7 +241,7 @@ function firstCommitArgs(
 }
 
 /**
- * Get then SHA of the first commit in the repository
+ * Get the SHA of the first commit in the repository
  */
 export async function firstCommitAsync(
   options: FirstCommitOptions = {},
@@ -270,7 +251,7 @@ export async function firstCommitAsync(
 }
 
 /**
- * Get then SHA of the first commit in the repository
+ * Get the SHA of the first commit in the repository
  */
 export function firstCommitSync(options: FirstCommitOptions = {}): string {
   const stdout = execSync(...firstCommitArgs(options));
