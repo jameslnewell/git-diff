@@ -5,6 +5,7 @@ import {
   diffSync,
   firstCommitAsync,
   firstCommitSync,
+  paths,
 } from './diff.ts';
 import {equal} from 'node:assert';
 
@@ -32,10 +33,10 @@ suite(diffAsync.name, () => {
       head: 'HEAD',
     });
 
-    const paths = Array.from(diff.paths());
-    equal(paths.includes('README.md'), true);
-    equal(paths.includes('package.json'), true);
-    equal(paths.includes('src/diff.ts'), true);
+    const allPaths = paths(diff);
+    equal(allPaths.includes('README.md'), true);
+    equal(allPaths.includes('package.json'), true);
+    equal(allPaths.includes('src/diff.ts'), true);
   });
 });
 
@@ -63,10 +64,10 @@ suite(diffSync.name, () => {
       head: 'HEAD',
     });
 
-    const paths = Array.from(diff.paths());
-    equal(paths.includes('README.md'), true);
-    equal(paths.includes('package.json'), true);
-    equal(paths.includes('src/diff.ts'), true);
+    const allPaths = paths(diff);
+    equal(allPaths.includes('README.md'), true);
+    equal(allPaths.includes('package.json'), true);
+    equal(allPaths.includes('src/diff.ts'), true);
   });
 });
 
