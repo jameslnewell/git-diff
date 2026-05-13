@@ -1,3 +1,15 @@
+# v0.1.2 (Wed May 13 2026)
+
+#### 🐛 Bug Fix
+
+- Add functional API for inspecting git diff results [#3](https://github.com/jameslnewell/git-diff/pull/3) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.1.1 (Tue May 12 2026)
 
 #### 🐛 Bug Fix
