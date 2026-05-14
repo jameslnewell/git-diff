@@ -133,8 +133,8 @@ function execSync(
 class GitDiffError extends Error {
   override readonly name = 'GitDiffError';
   readonly code: string;
-  constructor(message: string, code: string) {
-    super(message);
+  constructor(code: string, message: string, options?: {cause?: unknown}) {
+    super(message, options);
     this.code = code;
   }
 }
@@ -143,16 +143,37 @@ function isErrorWithStderr(error: unknown): error is {stderr: string} {
   return error instanceof Error && !!(error as {stderr?: string}).stderr;
 }
 
-function throwGitDiffError(error: unknown): void {
+function handleErrors(error: unknown): never {
   if (isErrorWithStderr(error)) {
     const match = /fatal: bad revision '(.*)'/.exec(error.stderr);
     if (match) {
       throw new GitDiffError(
-        `The ref does not exist: ${match[1]}`,
         badRevisionErrorCode,
+        `The ref does not exist: ${match[1]}`,
+        {cause: error},
       );
     }
   }
+  throw error;
+}
+
+/**
+ * Type guard for the "bad revision" error thrown by `diffAsync` / `diffSync`
+ * when a `base`/`head` ref does not exist. Duck-types the error's shape
+ * (`name` + `code`) rather than using `instanceof`, which breaks across
+ * dual-package installs, multiple installed versions, bundler boundaries and
+ * module realms.
+ */
+export function isBadRevisionError(
+  error: unknown,
+): error is {name: 'GitDiffError'; code: 'BAD_REVISION'; message: string} {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as {name?: unknown}).name === 'GitDiffError' &&
+    (error as {code?: unknown}).code === badRevisionErrorCode &&
+    typeof (error as {message?: unknown}).message === 'string'
+  );
 }
 
 /** Parse the stdout of `git diff` into a Diff record */
@@ -190,8 +211,7 @@ export async function diffAsync(options: DiffOptions = {}): Promise<Diff> {
     const {stdout} = await execAsync(...diffArgs(options));
     return parse(stdout);
   } catch (error) {
-    throwGitDiffError(error);
-    throw error;
+    handleErrors(error);
   }
 }
 
@@ -203,8 +223,7 @@ export function diffSync(options: DiffOptions = {}): Diff {
     const stdout = execSync(...diffArgs(options));
     return parse(stdout);
   } catch (error) {
-    throwGitDiffError(error);
-    throw error;
+    handleErrors(error);
   }
 }
 
