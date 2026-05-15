@@ -132,7 +132,7 @@ let diff: Diff.Diff;
 try {
   diff = await Diff.diffAsync({base, head});
 } catch (error) {
-  if (error.code === 'BAD_REVISION') {
+  if (Diff.isBadRevisionError(error)) {
     diff = await Diff.diffAsync({
       base: await Diff.firstCommitAsync({ref: head}),
       head,
