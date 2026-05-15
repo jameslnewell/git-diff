@@ -36,9 +36,9 @@
     "dev": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types dev.ts"
   },
   "dependencies": {
-    "@types/picomatch": "^4.0.0",
+    "@types/picomatch": "^4.0.3",
     "debug": "^4.4.3",
     "fast-glob": "^3.3.3",
-    "picomatch": "^4.0.2"
+    "picomatch": "^4.0.4"
   }
 }
