@@ -80,6 +80,11 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Use a PAT so `auto shipit` can push the version bump + tag back to
+          # `main` — the default GITHUB_TOKEN is blocked by the `main: require CI`
+          # ruleset (github-actions[bot] is not in the bypass list).
+          token: ${{ secrets.RELEASE_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
@@ -91,5 +96,5 @@ jobs:
       - run: git fetch --unshallow --tags
       - run: npm x -y auto shipit
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
