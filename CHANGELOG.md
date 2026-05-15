@@ -1,3 +1,15 @@
+# v0.3.0 (Fri May 15 2026)
+
+#### 🚀 Enhancement
+
+- Export `isBadRevisionError` guard for detecting bad-revision errors [#5](https://github.com/jameslnewell/git-diff/pull/5) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.2.0 (Wed May 13 2026)
 
 #### 🚀 Enhancement
