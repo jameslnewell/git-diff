@@ -176,20 +176,26 @@ export function isBadRevisionError(
   );
 }
 
-/** Parse the stdout of `git diff` into a Diff record */
-function parse(stdout: string): Diff {
+/**
+ * Parse the stdout of `git diff --name-status` into a Diff record.
+ *
+ * Lines are tab-separated. Most changes are `<status>\t<path>`, but renames
+ * (`R`) and copies (`C`) are `<status>\t<old>\t<new>` and carry a similarity
+ * score on the status (e.g. `R100`). The entry is keyed on the path the file
+ * ends up at — the last field — and the status is reduced to its leading
+ * letter so the score doesn't leak into the `Status` value.
+ */
+export function parse(stdout: string): Diff {
   const diff: Diff = {};
 
   for (const line of stdout.split('\n')) {
     if (!line) continue;
-    const match = line.match(/^([^\W]*)\W+(.*)$/);
-    if (match) {
-      const status = match[1]?.trim();
-      const path = match[2]?.trim();
-      if (status && path) {
-        diff[path] = status as Status;
-        continue;
-      }
+    const fields = line.split('\t');
+    const code = fields[0]?.trim();
+    const path = fields[fields.length - 1]?.trim();
+    if (code && path && fields.length >= 2) {
+      diff[path] = code[0] as Status;
+      continue;
     }
     throw new Error(`Invalid line in diff output: ${line}`);
   }
