@@ -1,3 +1,15 @@
+# v0.4.1 (Mon May 25 2026)
+
+#### 🐛 Bug Fix
+
+- Fix name-status parsing of renames, copies and dotfiles [#21](https://github.com/jameslnewell/git-diff/pull/21) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.4.0 (Fri May 15 2026)
 
 #### 🚀 Enhancement
