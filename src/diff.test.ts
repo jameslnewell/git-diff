@@ -1,5 +1,5 @@
 import {suite, test} from 'node:test';
-import {deepEqual, equal} from 'node:assert';
+import {deepEqual, equal, throws} from 'node:assert';
 import * as Diff from './diff.ts';
 
 const diff: Diff.Diff = {
@@ -10,6 +10,46 @@ const diff: Diff.Diff = {
   'src/utils.test.ts': Diff.Status.Renamed,
   'tsconfig.json': Diff.Status.Unknown,
 };
+
+suite(Diff.parse.name, () => {
+  test('parses single-status lines', () => {
+    deepEqual(
+      Diff.parse('A\tsrc/main.ts\nM\tsrc/utils.ts\nD\tsrc/index.ts\n'),
+      {
+        'src/main.ts': Diff.Status.Added,
+        'src/utils.ts': Diff.Status.Modified,
+        'src/index.ts': Diff.Status.Deleted,
+      },
+    );
+  });
+
+  test('keeps the leading dot of dotfile paths', () => {
+    deepEqual(Diff.parse('M\t.gitignore\nA\t.buildkite/pipeline.ts\n'), {
+      '.gitignore': Diff.Status.Modified,
+      '.buildkite/pipeline.ts': Diff.Status.Added,
+    });
+  });
+
+  test('keys a rename on the destination and reduces the score to R', () => {
+    deepEqual(Diff.parse('R100\tDockerfile\tbackend/Dockerfile\n'), {
+      'backend/Dockerfile': Diff.Status.Renamed,
+    });
+  });
+
+  test('keys a copy on the destination path', () => {
+    deepEqual(Diff.parse('C075\tsrc/a.ts\tsrc/b.ts\n'), {
+      'src/b.ts': Diff.Status.Changed,
+    });
+  });
+
+  test('ignores blank lines', () => {
+    deepEqual(Diff.parse('A\ta.ts\n\n'), {'a.ts': Diff.Status.Added});
+  });
+
+  test('throws on a line with no path', () => {
+    throws(() => Diff.parse('A\n'), /Invalid line in diff output/);
+  });
+});
 
 suite(Diff.filterByPaths.name, () => {
   test('keeps entries whose path matches a glob', () => {
