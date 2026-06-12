@@ -21,7 +21,7 @@
     "@jameslnewell/prettier-config": "^1.2.1",
     "@jameslnewell/typescript-config": "^5.0.1",
     "@types/debug": "^4.1.13",
-    "@types/node": "^22.15.21",
+    "@types/node": "^25.9.3",
     "prettier": "^3.8.4",
     "typescript": "^5.8.3"
   },
