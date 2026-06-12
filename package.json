@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@jameslnewell/prettier-config": "^1.2.1",
-    "@jameslnewell/typescript-config": "^5.0.1",
+    "@jameslnewell/typescript-config": "^6.0.0",
     "@types/debug": "^4.1.13",
     "@types/node": "^22.15.21",
     "prettier": "^3.8.4",
