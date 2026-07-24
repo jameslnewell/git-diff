@@ -23,7 +23,7 @@
     "@types/debug": "^4.1.13",
     "@types/node": "^22.15.21",
     "prettier": "^3.9.6",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.2"
   },
   "prettier": "@jameslnewell/prettier-config",
   "scripts": {
