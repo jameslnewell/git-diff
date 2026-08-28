@@ -18,7 +18,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "@jameslnewell/prettier-config": "^1.2.1",
+    "@jameslnewell/prettier-config": "^2.0.0",
     "@jameslnewell/typescript-config": "^5.0.1",
     "@types/debug": "^4.1.13",
     "@types/node": "^22.15.21",
