@@ -1,3 +1,15 @@
+# v0.6.0 (Thu Sep 10 2026)
+
+#### 🚀 Enhancement
+
+- Say which ref was missing, not just that one was [#39](https://github.com/jameslnewell/git-diff/pull/39) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.5.0 (Thu Sep 10 2026)
 
 #### 🚀 Enhancement
