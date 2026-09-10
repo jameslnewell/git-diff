@@ -8,6 +8,8 @@ const execSyncLog = debug('git-diff:execSync');
 
 const execFileAsync = promisify(execFile);
 
+const baseDoesNotExistErrorCode = 'BASE_DOES_NOT_EXIST';
+const headDoesNotExistErrorCode = 'HEAD_DOES_NOT_EXIST';
 const badRevisionErrorCode = 'BAD_REVISION';
 
 export type Path = string;
@@ -167,9 +169,16 @@ function execSync(
 class GitDiffError extends Error {
   override readonly name = 'GitDiffError';
   readonly code: string;
-  constructor(code: string, message: string, options?: {cause?: unknown}) {
+  /** The ref the error is about, when it is about one. */
+  readonly ref: string | undefined;
+  constructor(
+    code: string,
+    message: string,
+    options?: {cause?: unknown; ref?: string | undefined},
+  ) {
     super(message, options);
     this.code = code;
+    this.ref = options?.ref;
   }
 }
 
@@ -180,9 +189,9 @@ class GitDiffError extends Error {
  * constructed by whichever realm `node:child_process` was loaded in, and
  * `instanceof` is false across realms — a bundler boundary, a dual-package
  * install, a test harness with its own module registry. Guarding on it there
- * would mean no `GitDiffError` was ever produced and {@link isBadRevisionError}
- * silently never fired, which is exactly the case it exists to duck-type
- * around. `String()` likewise covers `stderr` arriving as a `Buffer` without
+ * would mean no `GitDiffError` was ever produced and
+ * {@link isBaseDoesNotExistError} silently never fired, which is exactly the
+ * case it exists to duck-type around. `String()` likewise covers `stderr` arriving as a `Buffer` without
  * reaching for another `instanceof`.
  */
 function stderrOf(error: unknown): string {
@@ -190,35 +199,138 @@ function stderrOf(error: unknown): string {
   return String((error as {stderr?: unknown}).stderr ?? '');
 }
 
-function handleErrors(error: unknown): never {
-  const match = /fatal: bad revision '(.*)'/.exec(stderrOf(error));
-  if (match) {
-    throw new GitDiffError(
-      badRevisionErrorCode,
-      `The ref does not exist: ${match[1]}`,
-      {cause: error},
-    );
+/**
+ * The ref git refused to resolve, if that is what went wrong.
+ *
+ * Two wordings, because git reports a full-length object id it doesn't have
+ * differently from everything else — the shape a `base` carried over from an
+ * earlier build takes in a shallow checkout. Both echo the argument
+ * **verbatim**, which is what makes attributing it below sound.
+ *
+ * Some failures name no ref at all (`main@{upstream}` on a branch with no
+ * upstream, say). Those stay unclassified and the original error is rethrown.
+ */
+function rejectedRef(stderr: string): string | undefined {
+  return (
+    /fatal: bad revision '(.*)'/.exec(stderr)?.[1] ??
+    /fatal: bad object (\S+)/.exec(stderr)?.[1]
+  );
+}
+
+/**
+ * Classifies a failed git invocation.
+ *
+ * git names the ref it rejected but not which argument that was, and the caller
+ * cannot tell from the message alone — so it is matched against the options the
+ * command was built from here, where they are known. Leaving that to consumers
+ * means every one of them re-deriving it by string-matching an error message,
+ * which is the sort of thing that quietly stops working.
+ *
+ * `base` is checked first, so a ref diffed against itself reports the base —
+ * and so does a call where *both* refs are missing, since git only ever names
+ * the first one it rejected.
+ */
+function handleErrors(error: unknown, options: DiffOptions = {}): never {
+  const ref = rejectedRef(stderrOf(error));
+  if (ref !== undefined) {
+    const code =
+      ref === options.base
+        ? baseDoesNotExistErrorCode
+        : ref === options.head
+          ? headDoesNotExistErrorCode
+          : // git echoes the argument verbatim, so a ref matching neither
+            // shouldn't arise. Kept so that an unattributable ref failure is
+            // still a `GitDiffError` rather than a raw exec error.
+            badRevisionErrorCode;
+    throw new GitDiffError(code, `The ref does not exist: ${ref}`, {
+      cause: error,
+      ref,
+    });
   }
   throw error;
 }
 
+interface RefDoesNotExistError<Code extends string> {
+  name: 'GitDiffError';
+  code: Code;
+  message: string;
+  /** The ref that does not exist. */
+  ref: string;
+}
+
 /**
- * Type guard for the "bad revision" error thrown by `diffAsync` / `diffSync`
- * when a `base`/`head` ref does not exist. Duck-types the error's shape
- * (`name` + `code`) rather than using `instanceof`, which breaks across
- * dual-package installs, multiple installed versions, bundler boundaries and
- * module realms.
+ * Duck-types the error's shape (`name` + `code`) rather than using
+ * `instanceof`, which breaks across dual-package installs, multiple installed
+ * versions, bundler boundaries and module realms.
  */
-export function isBadRevisionError(
-  error: unknown,
-): error is {name: 'GitDiffError'; code: 'BAD_REVISION'; message: string} {
+function isGitDiffError(error: unknown, codes: readonly string[]): boolean {
   return (
     typeof error === 'object' &&
     error !== null &&
     (error as {name?: unknown}).name === 'GitDiffError' &&
-    (error as {code?: unknown}).code === badRevisionErrorCode &&
-    typeof (error as {message?: unknown}).message === 'string'
+    typeof (error as {message?: unknown}).message === 'string' &&
+    codes.includes((error as {code?: unknown}).code as string)
   );
+}
+
+function hasRef(error: unknown): boolean {
+  return typeof (error as {ref?: unknown}).ref === 'string';
+}
+
+/**
+ * Whether `diffAsync` / `diffSync` failed because the `base` ref does not
+ * exist — the cue to diff from {@link emptyTreeAsync} instead, on the first
+ * CI run before a mutable tag has been pushed.
+ *
+ * git names only the first ref it rejected, so this does not imply `head` is
+ * fine; the retry against the empty tree will say so if it isn't.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   diff = await diffAsync({base, head});
+ * } catch (error) {
+ *   if (!isBaseDoesNotExistError(error)) throw error;
+ *   diff = await diffAsync({base: await emptyTreeAsync(), head});
+ * }
+ * ```
+ */
+export function isBaseDoesNotExistError(
+  error: unknown,
+): error is RefDoesNotExistError<'BASE_DOES_NOT_EXIST'> {
+  return isGitDiffError(error, [baseDoesNotExistErrorCode]) && hasRef(error);
+}
+
+/**
+ * Whether `diffAsync` / `diffSync` failed because the `head` ref does not
+ * exist. Almost always a mistake worth surfacing rather than working around —
+ * it is here so that it can be told apart from a missing `base`, which is not.
+ */
+export function isHeadDoesNotExistError(
+  error: unknown,
+): error is RefDoesNotExistError<'HEAD_DOES_NOT_EXIST'> {
+  return isGitDiffError(error, [headDoesNotExistErrorCode]) && hasRef(error);
+}
+
+/**
+ * @deprecated Use {@link isBaseDoesNotExistError}, which says *which* ref was
+ * missing. This is true for a missing `base` or `head` alike, so a caller using
+ * it to decide on a fallback base would take that branch for a typo'd `head`
+ * too — logging and diffing something other than what actually failed.
+ */
+export function isBadRevisionError(error: unknown): error is {
+  name: 'GitDiffError';
+  code: 'BASE_DOES_NOT_EXIST' | 'HEAD_DOES_NOT_EXIST' | 'BAD_REVISION';
+  message: string;
+} {
+  // Deliberately not requiring `ref`: an error raised by an older copy of this
+  // library — the cross-version case the duck-typing exists for — predates it,
+  // and this guard is the one such callers are still using.
+  return isGitDiffError(error, [
+    baseDoesNotExistErrorCode,
+    headDoesNotExistErrorCode,
+    badRevisionErrorCode,
+  ]);
 }
 
 /**
@@ -262,7 +374,7 @@ export async function diffAsync(options: DiffOptions = {}): Promise<Diff> {
     const {stdout} = await execAsync(...diffArgs(options));
     return parse(stdout);
   } catch (error) {
-    handleErrors(error);
+    handleErrors(error, options);
   }
 }
 
@@ -274,7 +386,7 @@ export function diffSync(options: DiffOptions = {}): Diff {
     const stdout = execSync(...diffArgs(options));
     return parse(stdout);
   } catch (error) {
-    handleErrors(error);
+    handleErrors(error, options);
   }
 }
 
