@@ -118,18 +118,39 @@ suite('error classification', () => {
   const stderr = "fatal: bad revision 'non-existent-ref'\n";
   const expected = {
     name: 'GitDiffError',
-    code: 'BAD_REVISION',
+    code: 'BASE_DOES_NOT_EXIST',
     message: 'The ref does not exist: non-existent-ref',
+    ref: 'non-existent-ref',
   };
 
-  test('async: classifies a bad revision raised in another realm', async () => {
+  test('async: classifies a missing ref raised in another realm', async () => {
     results = [{error: foreignError(stderr)}];
     await rejects(() => Diff.diffAsync({base: 'non-existent-ref'}), expected);
   });
 
-  test('sync: classifies a bad revision raised in another realm', () => {
+  test('sync: classifies a missing ref raised in another realm', () => {
     results = [{error: foreignError(stderr)}];
     throws(() => Diff.diffSync({base: 'non-existent-ref'}), expected);
+  });
+
+  test('a ref that is neither base nor head stays unattributed', () => {
+    // git names a ref the caller did not pass — e.g. one that appeared inside a
+    // revision expression. Nothing can be concluded about which argument was
+    // at fault, so neither guard should claim it.
+    results = [{error: foreignError(stderr)}];
+    throws(() => Diff.diffSync({base: 'main', head: 'HEAD'}), {
+      name: 'GitDiffError',
+      code: 'BAD_REVISION',
+      ref: 'non-existent-ref',
+    });
+  });
+
+  test('a base that is also the head is reported as the base', () => {
+    results = [{error: foreignError(stderr)}];
+    throws(
+      () => Diff.diffSync({base: 'non-existent-ref', head: 'non-existent-ref'}),
+      {code: 'BASE_DOES_NOT_EXIST'},
+    );
   });
 
   test('rethrows an error it cannot classify', () => {

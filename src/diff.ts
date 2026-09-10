@@ -8,6 +8,8 @@ const execSyncLog = debug('git-diff:execSync');
 
 const execFileAsync = promisify(execFile);
 
+const baseDoesNotExistErrorCode = 'BASE_DOES_NOT_EXIST';
+const headDoesNotExistErrorCode = 'HEAD_DOES_NOT_EXIST';
 const badRevisionErrorCode = 'BAD_REVISION';
 
 export type Path = string;
@@ -167,9 +169,16 @@ function execSync(
 class GitDiffError extends Error {
   override readonly name = 'GitDiffError';
   readonly code: string;
-  constructor(code: string, message: string, options?: {cause?: unknown}) {
+  /** The ref the error is about, when it is about one. */
+  readonly ref: string | undefined;
+  constructor(
+    code: string,
+    message: string,
+    options?: {cause?: unknown; ref?: string | undefined},
+  ) {
     super(message, options);
     this.code = code;
+    this.ref = options?.ref;
   }
 }
 
@@ -190,34 +199,107 @@ function stderrOf(error: unknown): string {
   return String((error as {stderr?: unknown}).stderr ?? '');
 }
 
-function handleErrors(error: unknown): never {
+/**
+ * Classifies a failed git invocation.
+ *
+ * git names the ref it rejected but not which argument that was, and the caller
+ * cannot tell from the message alone — so it is matched against the options the
+ * command was built from here, where they are known. Leaving that to consumers
+ * means every one of them re-deriving it by string-matching an error message,
+ * which is the sort of thing that quietly stops working.
+ *
+ * `base` is checked first, so a diff of a ref against itself reports the base.
+ */
+function handleErrors(error: unknown, options: DiffOptions = {}): never {
   const match = /fatal: bad revision '(.*)'/.exec(stderrOf(error));
   if (match) {
-    throw new GitDiffError(
-      badRevisionErrorCode,
-      `The ref does not exist: ${match[1]}`,
-      {cause: error},
-    );
+    const ref = match[1];
+    const code =
+      ref === options.base
+        ? baseDoesNotExistErrorCode
+        : ref === options.head
+          ? headDoesNotExistErrorCode
+          : badRevisionErrorCode;
+    throw new GitDiffError(code, `The ref does not exist: ${ref}`, {
+      cause: error,
+      ref,
+    });
   }
   throw error;
 }
 
+interface RefDoesNotExistError {
+  name: 'GitDiffError';
+  code: string;
+  message: string;
+  /** The ref that does not exist. */
+  ref: string;
+}
+
 /**
- * Type guard for the "bad revision" error thrown by `diffAsync` / `diffSync`
- * when a `base`/`head` ref does not exist. Duck-types the error's shape
- * (`name` + `code`) rather than using `instanceof`, which breaks across
- * dual-package installs, multiple installed versions, bundler boundaries and
- * module realms.
+ * Duck-types the error's shape (`name` + `code` + `ref`) rather than using
+ * `instanceof`, which breaks across dual-package installs, multiple installed
+ * versions, bundler boundaries and module realms.
  */
-export function isBadRevisionError(
+function isRefDoesNotExistError(
   error: unknown,
-): error is {name: 'GitDiffError'; code: 'BAD_REVISION'; message: string} {
+  code: string,
+): error is RefDoesNotExistError {
   return (
     typeof error === 'object' &&
     error !== null &&
     (error as {name?: unknown}).name === 'GitDiffError' &&
-    (error as {code?: unknown}).code === badRevisionErrorCode &&
-    typeof (error as {message?: unknown}).message === 'string'
+    (error as {code?: unknown}).code === code &&
+    typeof (error as {message?: unknown}).message === 'string' &&
+    typeof (error as {ref?: unknown}).ref === 'string'
+  );
+}
+
+/**
+ * Whether `diffAsync` / `diffSync` failed because the `base` ref does not
+ * exist — the cue to diff from {@link emptyTreeAsync} instead, on the first
+ * CI run before a mutable tag has been pushed.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   diff = await diffAsync({base, head});
+ * } catch (error) {
+ *   if (!isBaseDoesNotExistError(error)) throw error;
+ *   diff = await diffAsync({base: await emptyTreeAsync(), head});
+ * }
+ * ```
+ */
+export function isBaseDoesNotExistError(
+  error: unknown,
+): error is RefDoesNotExistError {
+  return isRefDoesNotExistError(error, baseDoesNotExistErrorCode);
+}
+
+/**
+ * Whether `diffAsync` / `diffSync` failed because the `head` ref does not
+ * exist. Almost always a mistake worth surfacing rather than working around —
+ * it is here so that it can be told apart from a missing `base`, which is not.
+ */
+export function isHeadDoesNotExistError(
+  error: unknown,
+): error is RefDoesNotExistError {
+  return isRefDoesNotExistError(error, headDoesNotExistErrorCode);
+}
+
+/**
+ * @deprecated Use {@link isBaseDoesNotExistError}, which says *which* ref was
+ * missing. This is true for a missing `base` or `head` alike, so a caller using
+ * it to decide on a fallback base would take that branch for a typo'd `head`
+ * too — logging and diffing something other than what actually failed.
+ */
+export function isBadRevisionError(
+  error: unknown,
+): error is RefDoesNotExistError {
+  return (
+    isRefDoesNotExistError(error, baseDoesNotExistErrorCode) ||
+    isRefDoesNotExistError(error, headDoesNotExistErrorCode) ||
+    isRefDoesNotExistError(error, badRevisionErrorCode)
   );
 }
 
@@ -262,7 +344,7 @@ export async function diffAsync(options: DiffOptions = {}): Promise<Diff> {
     const {stdout} = await execAsync(...diffArgs(options));
     return parse(stdout);
   } catch (error) {
-    handleErrors(error);
+    handleErrors(error, options);
   }
 }
 
@@ -274,7 +356,7 @@ export function diffSync(options: DiffOptions = {}): Diff {
     const stdout = execSync(...diffArgs(options));
     return parse(stdout);
   } catch (error) {
-    handleErrors(error);
+    handleErrors(error, options);
   }
 }
 

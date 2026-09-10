@@ -43,7 +43,7 @@ function useRepository(
 }
 
 suite(Diff.diffAsync.name, () => {
-  test('throws for bad revision', async (t) => {
+  test('throws when the base does not exist', async (t) => {
     const repository = useRepository(t);
     await rejects(
       () =>
@@ -54,8 +54,27 @@ suite(Diff.diffAsync.name, () => {
         }),
       {
         name: 'GitDiffError',
-        code: 'BAD_REVISION',
+        code: 'BASE_DOES_NOT_EXIST',
         message: 'The ref does not exist: non-existent-ref',
+        ref: 'non-existent-ref',
+      },
+    );
+  });
+
+  test('throws when the head does not exist', async (t) => {
+    const repository = useRepository(t);
+    await rejects(
+      () =>
+        Diff.diffAsync({
+          cwd: repository.cwd,
+          base: 'HEAD~2',
+          head: 'non-existent-ref',
+        }),
+      {
+        name: 'GitDiffError',
+        code: 'HEAD_DOES_NOT_EXIST',
+        message: 'The ref does not exist: non-existent-ref',
+        ref: 'non-existent-ref',
       },
     );
   });
@@ -89,7 +108,7 @@ suite(Diff.diffAsync.name, () => {
 });
 
 suite(Diff.diffSync.name, () => {
-  test('throws for bad revision', (t) => {
+  test('throws when the base does not exist', (t) => {
     const repository = useRepository(t);
     throws(
       () =>
@@ -100,8 +119,27 @@ suite(Diff.diffSync.name, () => {
         }),
       {
         name: 'GitDiffError',
-        code: 'BAD_REVISION',
+        code: 'BASE_DOES_NOT_EXIST',
         message: 'The ref does not exist: non-existent-ref',
+        ref: 'non-existent-ref',
+      },
+    );
+  });
+
+  test('throws when the head does not exist', (t) => {
+    const repository = useRepository(t);
+    throws(
+      () =>
+        Diff.diffSync({
+          cwd: repository.cwd,
+          base: 'HEAD~2',
+          head: 'non-existent-ref',
+        }),
+      {
+        name: 'GitDiffError',
+        code: 'HEAD_DOES_NOT_EXIST',
+        message: 'The ref does not exist: non-existent-ref',
+        ref: 'non-existent-ref',
       },
     );
   });
@@ -243,5 +281,51 @@ suite(Diff.firstCommitSync.name, () => {
       Diff.firstCommitSync({cwd: repository.cwd}),
       Diff.emptyTreeSync({cwd: repository.cwd}),
     );
+  });
+});
+
+suite(Diff.isBaseDoesNotExistError.name, () => {
+  test('true for a missing base, false for a missing head', async (t) => {
+    const repository = useRepository(t);
+
+    const missingBase = await Diff.diffAsync({
+      cwd: repository.cwd,
+      base: 'non-existent-ref',
+      head: 'HEAD',
+    }).catch((error: unknown) => error);
+    equal(Diff.isBaseDoesNotExistError(missingBase), true);
+    equal(Diff.isHeadDoesNotExistError(missingBase), false);
+
+    const missingHead = await Diff.diffAsync({
+      cwd: repository.cwd,
+      base: 'HEAD~2',
+      head: 'non-existent-ref',
+    }).catch((error: unknown) => error);
+    equal(Diff.isBaseDoesNotExistError(missingHead), false);
+    equal(Diff.isHeadDoesNotExistError(missingHead), true);
+  });
+
+  test('false for a failure that is not a missing ref', async () => {
+    const error = await Diff.diffAsync({cwd: '/'}).catch(
+      (error: unknown) => error,
+    );
+    equal(Diff.isBaseDoesNotExistError(error), false);
+    equal(Diff.isBadRevisionError(error), false);
+  });
+});
+
+suite(Diff.isBadRevisionError.name, () => {
+  test('stays true for either missing ref', async (t) => {
+    const repository = useRepository(t);
+    for (const options of [
+      {base: 'non-existent-ref', head: 'HEAD'},
+      {base: 'HEAD~2', head: 'non-existent-ref'},
+    ]) {
+      const error = await Diff.diffAsync({
+        cwd: repository.cwd,
+        ...options,
+      }).catch((error: unknown) => error);
+      equal(Diff.isBadRevisionError(error), true);
+    }
   });
 });
