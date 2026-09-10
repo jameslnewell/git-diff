@@ -105,14 +105,44 @@ export function unknown(diff: Diff, paths?: Path | Path[]): boolean {
   return containsPathsWithStatus(diff, Status.Unknown, paths);
 }
 
+/**
+ * The environment git is invoked with.
+ *
+ * `LC_ALL=C` is the one that matters: `handleErrors` recognises a missing ref
+ * by the English wording of `fatal: bad revision`, and git ships translations,
+ * so on a localised machine the error would escape unclassified. `C` also stops
+ * gettext honouring `LANGUAGE`, which otherwise outranks the locale variables.
+ *
+ * `GIT_TERMINAL_PROMPT=0` is inert for the read-only commands run here, and is
+ * set so it stays that way — anything that reached the network could otherwise
+ * block on a credential prompt in a CI job with nobody at the terminal.
+ */
+function env(): NodeJS.ProcessEnv {
+  return {...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0'};
+}
+
+/**
+ * `execFile` buffers stdout and kills the child when it overflows. The default
+ * 1 MiB is around 26,000 `--name-status` lines, and a diff from the empty tree
+ * lists every file in the repository — so the very feature that needs the most
+ * room is the one that would hit the ceiling.
+ */
+const maxBuffer = 64 * 1024 * 1024;
+
 async function execAsync(
   cmd: string,
   args: string[],
   options: {encoding: 'utf8'; cwd?: string | undefined},
 ): Promise<{stdout: string}> {
+  // `env` is deliberately left out of the log — it carries the caller's whole
+  // environment, secrets included
   execAsyncLog('exec: %s %s %o', cmd, args.join(' '), options);
   try {
-    const result = await execFileAsync(cmd, args, options);
+    const result = await execFileAsync(cmd, args, {
+      ...options,
+      env: env(),
+      maxBuffer,
+    });
     execAsyncLog('exec result: %s', result);
     return result;
   } catch (error) {
@@ -127,7 +157,11 @@ function execSync(
   options: {encoding: 'utf8'; cwd?: string | undefined},
 ): string {
   execSyncLog('exec: %s %s %o', cmd, args.join(' '), options);
-  return execFileSync(cmd, args, options).toString();
+  return execFileSync(cmd, args, {
+    ...options,
+    env: env(),
+    maxBuffer,
+  }).toString();
 }
 
 class GitDiffError extends Error {
@@ -139,20 +173,31 @@ class GitDiffError extends Error {
   }
 }
 
-function isErrorWithStderr(error: unknown): error is {stderr: string} {
-  return error instanceof Error && !!(error as {stderr?: string}).stderr;
+/**
+ * The `stderr` of a failed `execFile`, however that error reached us.
+ *
+ * Deliberately not guarded on `error instanceof Error`. The error is
+ * constructed by whichever realm `node:child_process` was loaded in, and
+ * `instanceof` is false across realms — a bundler boundary, a dual-package
+ * install, a test harness with its own module registry. Guarding on it there
+ * would mean no `GitDiffError` was ever produced and {@link isBadRevisionError}
+ * silently never fired, which is exactly the case it exists to duck-type
+ * around. `String()` likewise covers `stderr` arriving as a `Buffer` without
+ * reaching for another `instanceof`.
+ */
+function stderrOf(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return '';
+  return String((error as {stderr?: unknown}).stderr ?? '');
 }
 
 function handleErrors(error: unknown): never {
-  if (isErrorWithStderr(error)) {
-    const match = /fatal: bad revision '(.*)'/.exec(error.stderr);
-    if (match) {
-      throw new GitDiffError(
-        badRevisionErrorCode,
-        `The ref does not exist: ${match[1]}`,
-        {cause: error},
-      );
-    }
+  const match = /fatal: bad revision '(.*)'/.exec(stderrOf(error));
+  if (match) {
+    throw new GitDiffError(
+      badRevisionErrorCode,
+      `The ref does not exist: ${match[1]}`,
+      {cause: error},
+    );
   }
   throw error;
 }
@@ -240,6 +285,12 @@ function diffArgs(
   return [
     'git',
     [
+      // non-ASCII paths are octal-quoted by default, which no glob would then
+      // match. This does not cover a path containing a tab, newline, quote or
+      // backslash — git quotes those regardless, and unquoting them properly
+      // means parsing `-z` output
+      '-c',
+      'core.quotePath=false',
       'diff',
       '--name-status',
       ...(options.base ? [options.base] : []),
@@ -250,35 +301,132 @@ function diffArgs(
   ];
 }
 
-interface FirstCommitOptions {
+/**
+ * The id of git's empty tree, by object format.
+ *
+ * The empty tree is the object `tree 0\0` — a header and no entries — so its
+ * id is that string hashed with the repository's algorithm, and is identical in
+ * every repository using that algorithm. Verify with
+ * `printf 'tree 0\0' | shasum -a 256`.
+ */
+const emptyTreeIds: Record<string, string> = {
+  sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+  sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
+};
+
+export interface EmptyTreeOptions {
   cwd?: string | undefined;
-  ref?: string | undefined;
 }
 
-function firstCommitArgs(
-  options: FirstCommitOptions,
+/** Convert options into arguments */
+function emptyTreeArgs(
+  options: EmptyTreeOptions,
 ): [string, string[], {encoding: 'utf8'; cwd?: string | undefined}] {
   return [
     'git',
-    ['rev-list', '--max-parents=0', options.ref || 'HEAD'],
+    ['rev-parse', '--show-object-format'],
     {encoding: 'utf8', cwd: options.cwd},
   ];
 }
 
+function parseEmptyTree(stdout: string): string {
+  const format = stdout.trim();
+
+  // `git rev-parse` echoes back an option it doesn't recognise and exits 0, so
+  // this is what git older than 2.29 — which predates `--show-object-format` —
+  // returns, and it needs to say so rather than name a format nobody asked for
+  if (format.startsWith('--')) {
+    throw new GitDiffError(
+      'UNSUPPORTED_OBJECT_FORMAT',
+      'Reading the object format requires git 2.29 or newer',
+    );
+  }
+
+  const id = emptyTreeIds[format];
+  if (id === undefined) {
+    throw new GitDiffError(
+      'UNSUPPORTED_OBJECT_FORMAT',
+      `Unsupported object format: ${format}`,
+    );
+  }
+
+  return id;
+}
+
 /**
- * Get the SHA of the first commit in the repository
+ * Get the id of git's empty tree — the base to diff from when every file in
+ * `head` should be reported as added, which is what you want when the ref you
+ * meant to diff from doesn't exist yet.
+ *
+ * `cwd` must be inside a git repository, since the id depends on which object
+ * format that repository uses — so pass the same `cwd` you pass to the diff, or
+ * the base can come back in the wrong format and be rejected as a bad revision.
+ *
+ * @example
+ * ```ts
+ * const diff = await diffAsync({base: await emptyTreeAsync(), head: 'HEAD'});
+ * ```
+ */
+export async function emptyTreeAsync(
+  options: EmptyTreeOptions = {},
+): Promise<string> {
+  try {
+    const {stdout} = await execAsync(...emptyTreeArgs(options));
+    return parseEmptyTree(stdout);
+  } catch (error) {
+    handleErrors(error);
+  }
+}
+
+/**
+ * Get the id of git's empty tree — the base to diff from when every file in
+ * `head` should be reported as added, which is what you want when the ref you
+ * meant to diff from doesn't exist yet.
+ *
+ * `cwd` must be inside a git repository, since the id depends on which object
+ * format that repository uses — so pass the same `cwd` you pass to the diff, or
+ * the base can come back in the wrong format and be rejected as a bad revision.
+ *
+ * @example
+ * ```ts
+ * const diff = diffSync({base: emptyTreeSync(), head: 'HEAD'});
+ * ```
+ */
+export function emptyTreeSync(options: EmptyTreeOptions = {}): string {
+  try {
+    const stdout = execSync(...emptyTreeArgs(options));
+    return parseEmptyTree(stdout);
+  } catch (error) {
+    handleErrors(error);
+  }
+}
+
+interface FirstCommitOptions {
+  cwd?: string | undefined;
+  /** @deprecated Ignored — the empty tree doesn't depend on a ref. */
+  ref?: string | undefined;
+}
+
+/**
+ * @deprecated Use {@link emptyTreeAsync}, which returns what this was always
+ * meant to give you — a base that reports every file as added. It returned the
+ * repository's root commit(s) instead, which is neither (a root commit
+ * contains files, and a repository can have several). `ref` is ignored: the
+ * empty tree doesn't depend on one.
  */
 export async function firstCommitAsync(
   options: FirstCommitOptions = {},
 ): Promise<string> {
-  const {stdout} = await execAsync(...firstCommitArgs(options));
-  return stdout.trim();
+  return await emptyTreeAsync({cwd: options.cwd});
 }
 
 /**
- * Get the SHA of the first commit in the repository
+ * @deprecated Use {@link emptyTreeSync}, which returns what this was always
+ * meant to give you — a base that reports every file as added. It returned the
+ * repository's root commit(s) instead, which is neither (a root commit
+ * contains files, and a repository can have several). `ref` is ignored: the
+ * empty tree doesn't depend on one.
  */
 export function firstCommitSync(options: FirstCommitOptions = {}): string {
-  const stdout = execSync(...firstCommitArgs(options));
-  return stdout.trim();
+  return emptyTreeSync({cwd: options.cwd});
 }
