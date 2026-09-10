@@ -309,13 +309,10 @@ function diffArgs(
  * every repository using that algorithm. Verify with
  * `printf 'tree 0\0' | shasum -a 256`.
  */
-const emptyTreeIds = new Map([
-  ['sha1', '4b825dc642cb6eb9a060e54bf8d69288fbee4904'],
-  [
-    'sha256',
-    '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
-  ],
-]);
+const emptyTreeIds: Record<string, string> = {
+  sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+  sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
+};
 
 export interface EmptyTreeOptions {
   cwd?: string | undefined;
@@ -345,7 +342,7 @@ function parseEmptyTree(stdout: string): string {
     );
   }
 
-  const id = emptyTreeIds.get(format);
+  const id = emptyTreeIds[format];
   if (id === undefined) {
     throw new GitDiffError(
       'UNSUPPORTED_OBJECT_FORMAT',
