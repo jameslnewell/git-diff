@@ -118,9 +118,7 @@ const diff = await Diff.diffAsync({
 });
 ```
 
-On the initial CI/CD run the mutable tag may not yet exist and `git diff` will error.
-
-In order to handle this case its recommended you diff against the first commit instead.
+On the initial CI/CD run the mutable tag doesn't exist yet and `git diff` will error. Catch that with `Diff.isBadRevisionError` and fall back to the empty tree, which reports every file as added:
 
 ```ts
 import * as Diff from '@jameslnewell/git-diff';
@@ -132,16 +130,30 @@ let diff: Diff.Diff;
 try {
   diff = await Diff.diffAsync({base, head});
 } catch (error) {
-  if (Diff.isBadRevisionError(error)) {
-    diff = await Diff.diffAsync({
-      base: await Diff.firstCommitAsync({ref: head}),
-      head,
-    });
-  } else {
-    throw error;
-  }
+  if (!Diff.isBadRevisionError(error)) throw error;
+  diff = await Diff.diffAsync({base: await Diff.emptyTreeAsync(), head});
 }
 ```
+
+### The empty tree
+
+`Diff.emptyTreeAsync()` / `Diff.emptyTreeSync()` return the id of git's empty tree — a tree object with no entries. Diffing from it reports **every file in `head` as added**, so it's the base to use when you can't tell what changed and have to assume everything did.
+
+It's git's own device for this: git-log(1) notes that "root commits are compared to an empty tree", and git-config(1) describes `log.showRoot` as "equivalent to a diff against an empty tree".
+
+The id is a hash of the empty tree object, so it depends on which algorithm the repository uses — `4b825dc…` under SHA-1, something else entirely under SHA-256, and `git diff` rejects the wrong one outright. These functions ask the repository, so `cwd` must be inside one.
+
+Don't reach for the repository's root commit instead. A root commit is only "nothing" if it's an empty commit, which almost none are — files added in the root and untouched since are missing from the diff, and files deleted since show up as `D`. A repository assembled from several histories (`git merge --allow-unrelated-histories`, or a `filter-repo` consolidation) has more than one root, and `git rev-list --max-parents=0` returns all of them.
+
+### How git is invoked
+
+Commands run with `LC_ALL=C`, so `isBadRevisionError` isn't defeated by a localised git, and `GIT_TERMINAL_PROMPT=0`, so nothing can block on a prompt. The rest of the environment is inherited.
+
+## Migrating from 0.4
+
+`firstCommitAsync` / `firstCommitSync` are deprecated in favour of `emptyTreeAsync` / `emptyTreeSync`.
+
+They now return the empty tree id rather than the repository's root commit, and ignore `ref`. If you were using them to mean "diff everything" — the case the README recommended them for — that's the same intent, more accurately served, and the call still works. If you were using them to find an actual root commit, run `git rev-list --max-parents=0` yourself.
 
 ## License
 

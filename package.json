@@ -31,8 +31,8 @@
     "formatting:fix": "prettier --write .",
     "build": "tsc --project tsconfig.build.json",
     "build:watch": "tsc --project tsconfig.build.json --watch",
-    "test": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --test \"src/**/*.test.ts\"",
-    "test:watch": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --test --watch \"src/**/*.test.ts\"",
+    "test": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --experimental-test-module-mocks --test \"src/**/*.test.ts\"",
+    "test:watch": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --experimental-test-module-mocks --test --watch \"src/**/*.test.ts\"",
     "dev": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types dev.ts"
   },
   "dependencies": {
