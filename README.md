@@ -123,20 +123,15 @@ On the initial CI/CD run the mutable tag doesn't exist yet and `git diff` will e
 ```ts
 import * as Diff from '@jameslnewell/git-diff';
 
-const cwd = process.cwd();
 const base = 'last-deployment';
 const head = 'HEAD';
 
 let diff: Diff.Diff;
 try {
-  diff = await Diff.diffAsync({cwd, base, head});
+  diff = await Diff.diffAsync({base, head});
 } catch (error) {
   if (!Diff.isBadRevisionError(error)) throw error;
-  diff = await Diff.diffAsync({
-    cwd,
-    base: await Diff.emptyTreeAsync({cwd}),
-    head,
-  });
+  diff = await Diff.diffAsync({base: await Diff.emptyTreeAsync(), head});
 }
 ```
 
