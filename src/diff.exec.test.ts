@@ -37,21 +37,19 @@ function execFileSyncMock(
   return next({cmd, args, options});
 }
 
-function execFileMock(
-  cmd: string,
-  args: string[],
-  options: Call['options'],
-  callback: (error: unknown, stdout: string, stderr: string) => void,
-): void {
-  try {
-    callback(null, next({cmd, args, options}), '');
-  } catch (error) {
-    callback(error, '', '');
-  }
+/**
+ * Only ever reached through `promisify`, which honours this symbol on the real
+ * `execFile` to resolve `{stdout, stderr}` rather than stdout alone. The
+ * callback form is deliberately not implemented: `diff.ts` doesn't use it, and
+ * a stand-in that dropped `stderr` would let the classification tests below
+ * pass against a broken classifier.
+ */
+function execFileMock(): never {
+  throw new Error(
+    'execFile was called with a callback, which diff.ts does not do',
+  );
 }
 
-// `diff.ts` wraps `execFile` with `promisify`, which honours this symbol on the
-// real `execFile` to resolve `{stdout, stderr}` rather than stdout alone
 Reflect.set(
   execFileMock,
   promisify.custom,
@@ -157,7 +155,15 @@ suite('command arguments', () => {
   test('diff passes -- so a ref that shadows a path is unambiguous', () => {
     results = [{stdout: ''}];
     Diff.diffSync({base: 'main', head: 'HEAD'});
-    deepEqual(calls[0]?.args, ['diff', '--name-status', 'main', 'HEAD', '--']);
+    deepEqual(calls[0]?.args, [
+      '-c',
+      'core.quotePath=false',
+      'diff',
+      '--name-status',
+      'main',
+      'HEAD',
+      '--',
+    ]);
   });
 
   test('the empty tree id is asked of the repository', () => {

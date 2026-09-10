@@ -29,6 +29,7 @@
   "scripts": {
     "formatting": "prettier --check .",
     "formatting:fix": "prettier --write .",
+    "typecheck": "tsc --project tsconfig.json",
     "build": "tsc --project tsconfig.build.json",
     "build:watch": "tsc --project tsconfig.build.json --watch",
     "test": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --experimental-test-module-mocks --test \"src/**/*.test.ts\"",

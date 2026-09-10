@@ -9,7 +9,6 @@ const execSyncLog = debug('git-diff:execSync');
 const execFileAsync = promisify(execFile);
 
 const badRevisionErrorCode = 'BAD_REVISION';
-const unsupportedObjectFormatErrorCode = 'UNSUPPORTED_OBJECT_FORMAT';
 
 export type Path = string;
 export type Status = 'A' | 'C' | 'D' | 'M' | 'R' | 'X';
@@ -286,6 +285,12 @@ function diffArgs(
   return [
     'git',
     [
+      // non-ASCII paths are octal-quoted by default, which no glob would then
+      // match. This does not cover a path containing a tab, newline, quote or
+      // backslash — git quotes those regardless, and unquoting them properly
+      // means parsing `-z` output
+      '-c',
+      'core.quotePath=false',
       'diff',
       '--name-status',
       ...(options.base ? [options.base] : []),
@@ -304,10 +309,13 @@ function diffArgs(
  * every repository using that algorithm. Verify with
  * `printf 'tree 0\0' | shasum -a 256`.
  */
-const emptyTreeIds: Record<string, string> = {
-  sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
-  sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
-};
+const emptyTreeIds = new Map([
+  ['sha1', '4b825dc642cb6eb9a060e54bf8d69288fbee4904'],
+  [
+    'sha256',
+    '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
+  ],
+]);
 
 export interface EmptyTreeOptions {
   cwd?: string | undefined;
@@ -326,13 +334,25 @@ function emptyTreeArgs(
 
 function parseEmptyTree(stdout: string): string {
   const format = stdout.trim();
-  const id = emptyTreeIds[format];
+
+  // `git rev-parse` echoes back an option it doesn't recognise and exits 0, so
+  // this is what git older than 2.29 — which predates `--show-object-format` —
+  // returns, and it needs to say so rather than name a format nobody asked for
+  if (format.startsWith('--')) {
+    throw new GitDiffError(
+      'UNSUPPORTED_OBJECT_FORMAT',
+      'Reading the object format requires git 2.29 or newer',
+    );
+  }
+
+  const id = emptyTreeIds.get(format);
   if (id === undefined) {
     throw new GitDiffError(
-      unsupportedObjectFormatErrorCode,
+      'UNSUPPORTED_OBJECT_FORMAT',
       `Unsupported object format: ${format}`,
     );
   }
+
   return id;
 }
 
@@ -342,7 +362,8 @@ function parseEmptyTree(stdout: string): string {
  * meant to diff from doesn't exist yet.
  *
  * `cwd` must be inside a git repository, since the id depends on which object
- * format that repository uses.
+ * format that repository uses — so pass the same `cwd` you pass to the diff, or
+ * the base can come back in the wrong format and be rejected as a bad revision.
  *
  * @example
  * ```ts
@@ -366,7 +387,8 @@ export async function emptyTreeAsync(
  * meant to diff from doesn't exist yet.
  *
  * `cwd` must be inside a git repository, since the id depends on which object
- * format that repository uses.
+ * format that repository uses — so pass the same `cwd` you pass to the diff, or
+ * the base can come back in the wrong format and be rejected as a bad revision.
  *
  * @example
  * ```ts
@@ -384,6 +406,7 @@ export function emptyTreeSync(options: EmptyTreeOptions = {}): string {
 
 interface FirstCommitOptions {
   cwd?: string | undefined;
+  /** @deprecated Ignored — the empty tree doesn't depend on a ref. */
   ref?: string | undefined;
 }
 

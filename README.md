@@ -123,15 +123,20 @@ On the initial CI/CD run the mutable tag doesn't exist yet and `git diff` will e
 ```ts
 import * as Diff from '@jameslnewell/git-diff';
 
+const cwd = process.cwd();
 const base = 'last-deployment';
 const head = 'HEAD';
 
 let diff: Diff.Diff;
 try {
-  diff = await Diff.diffAsync({base, head});
+  diff = await Diff.diffAsync({cwd, base, head});
 } catch (error) {
   if (!Diff.isBadRevisionError(error)) throw error;
-  diff = await Diff.diffAsync({base: await Diff.emptyTreeAsync(), head});
+  diff = await Diff.diffAsync({
+    cwd,
+    base: await Diff.emptyTreeAsync({cwd}),
+    head,
+  });
 }
 ```
 
@@ -141,13 +146,15 @@ try {
 
 It's git's own device for this: git-log(1) notes that "root commits are compared to an empty tree", and git-config(1) describes `log.showRoot` as "equivalent to a diff against an empty tree".
 
-The id is a hash of the empty tree object, so it depends on which algorithm the repository uses — `4b825dc…` under SHA-1, something else entirely under SHA-256, and `git diff` rejects the wrong one outright. These functions ask the repository, so `cwd` must be inside one.
+The id is a hash of the empty tree object, so it depends on which algorithm the repository uses — `4b825dc…` under SHA-1, something else entirely under SHA-256, and `git diff` rejects the wrong one outright. These functions ask the repository (`git rev-parse --show-object-format`, so git 2.29 or newer), which means `cwd` must be inside one — and it must be the **same** repository you pass to the diff, or you'll get a base in the wrong format.
 
 Don't reach for the repository's root commit instead. A root commit is only "nothing" if it's an empty commit, which almost none are — files added in the root and untouched since are missing from the diff, and files deleted since show up as `D`. A repository assembled from several histories (`git merge --allow-unrelated-histories`, or a `filter-repo` consolidation) has more than one root, and `git rev-list --max-parents=0` returns all of them.
 
 ### How git is invoked
 
-Commands run with `LC_ALL=C`, so `isBadRevisionError` isn't defeated by a localised git, and `GIT_TERMINAL_PROMPT=0`, so nothing can block on a prompt. The rest of the environment is inherited.
+Commands run with `LC_ALL=C`, so `isBadRevisionError` isn't defeated by a localised git, and `GIT_TERMINAL_PROMPT=0`, which stops git prompting on the terminal. The rest of the environment is inherited — including `GIT_ASKPASS`/`SSH_ASKPASS` and any configured credential helper, which are not neutralised, though none of the commands run here reach the network.
+
+Paths are read with `core.quotePath=false`, so non-ASCII filenames come back as themselves rather than octal escapes. Paths containing a tab, newline, quote or backslash are still quoted by git and are not currently unquoted.
 
 ## Migrating from 0.4
 

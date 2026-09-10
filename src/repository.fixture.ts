@@ -5,11 +5,11 @@ import {tmpdir} from 'node:os';
 
 /**
  * Git's own config must not reach these repositories. A developer's global
- * config can turn on gpg signing (every commit then fails), install hooks, or
- * set `diff.renames=copies` — any of which would make the tests pass or fail
- * for reasons that have nothing to do with the code under test. Pointing both
- * config paths at a file that doesn't exist is the portable way to say "no
- * config"; `/dev/null` isn't, and git rejects an unreadable path outright.
+ * config can turn on gpg signing (every commit then fails), install hooks, set
+ * `diff.renames=copies`, or pick a different `init.defaultObjectFormat` — any
+ * of which would make the tests pass or fail for reasons that have nothing to
+ * do with the code under test. Pointing both config paths at a file that
+ * doesn't exist is the portable way to say "no config"; `/dev/null` isn't.
  */
 const noUserConfig = join(tmpdir(), 'git-diff-tests-no-such-config');
 
@@ -24,21 +24,38 @@ const identity = {
   GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z',
 };
 
+export interface CommitOptions {
+  files: Record<string, string>;
+  message?: string | undefined;
+}
+
+export interface RemoveOptions {
+  files: string[];
+  message?: string | undefined;
+}
+
+export interface CommitUnrelatedHistoryOptions {
+  files: Record<string, string>;
+  branch: string;
+}
+
 export interface Repository {
   /** The repository's working directory, to pass as `cwd`. */
   cwd: string;
   /** Run a git command in the repository and return its stdout, trimmed. */
   git(...args: string[]): string;
   /** Write the given files and commit them. */
-  commit(files: Record<string, string>, message?: string): void;
+  commit(options: CommitOptions): void;
   /** Delete the given files and commit the deletion. */
-  remove(files: string[], message?: string): void;
+  remove(options: RemoveOptions): void;
   /**
    * Commit onto a new orphan branch and merge it back into `main`, giving the
    * repository an additional root commit — the shape a repository consolidated
    * from several `filter-repo`'d histories has.
    */
-  commitUnrelatedHistory(files: Record<string, string>, branch: string): void;
+  commitUnrelatedHistory(options: CommitUnrelatedHistoryOptions): void;
+  /** The paths of every file at `HEAD`. */
+  pathsAtHead(): string[];
   /** Delete the repository. */
   destroy(): void;
 }
@@ -66,37 +83,42 @@ export function createRepository({
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
 
-  git(
-    'init',
-    '--quiet',
-    '--initial-branch=main',
-    ...(objectFormat ? [`--object-format=${objectFormat}`] : []),
-  );
+  const destroy = (): void => rmSync(cwd, {recursive: true, force: true});
 
-  const write = (files: Record<string, string>): void => {
+  const commit = ({files, message = 'commit'}: CommitOptions): void => {
     for (const [path, content] of Object.entries(files)) {
       writeFileSync(join(cwd, path), content);
     }
-  };
-
-  const commit: Repository['commit'] = (files, message = 'commit') => {
-    write(files);
     git('add', '--all');
     git('commit', '--quiet', '--message', message);
   };
+
+  try {
+    git(
+      'init',
+      '--quiet',
+      '--initial-branch=main',
+      ...(objectFormat ? [`--object-format=${objectFormat}`] : []),
+    );
+  } catch (error) {
+    // the caller has no handle to clean up with yet
+    destroy();
+    throw error;
+  }
 
   return {
     cwd,
     git,
     commit,
-    remove(files, message = 'remove') {
+    destroy,
+    remove({files, message = 'remove'}) {
       git('rm', '--quiet', ...files);
       git('commit', '--quiet', '--message', message);
     },
-    commitUnrelatedHistory(files, branch) {
+    commitUnrelatedHistory({files, branch}) {
       git('checkout', '--quiet', '--orphan', branch);
       git('rm', '--quiet', '-rf', '.');
-      commit(files, `${branch} root`);
+      commit({files, message: `${branch} root`});
       git('checkout', '--quiet', 'main');
       git(
         'merge',
@@ -106,8 +128,18 @@ export function createRepository({
         branch,
       );
     },
-    destroy() {
-      rmSync(cwd, {recursive: true, force: true});
+    pathsAtHead() {
+      // `--name-only` octal-quotes non-ASCII paths exactly as `git diff` does,
+      // so without this the oracle would share the defect it is checking for
+      const stdout = git(
+        '-c',
+        'core.quotePath=false',
+        'ls-tree',
+        '-r',
+        '--name-only',
+        'HEAD',
+      );
+      return stdout ? stdout.split('\n') : [];
     },
   };
 }
