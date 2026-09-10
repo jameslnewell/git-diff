@@ -1,3 +1,25 @@
+# v0.5.0 (Thu Sep 10 2026)
+
+#### 🚀 Enhancement
+
+- Return the empty tree as the base that means "diff everything" [#38](https://github.com/jameslnewell/git-diff/pull/38) ([@jameslnewell](https://github.com/jameslnewell))
+- Bump prettier from 3.8.4 to 3.9.4 [#28](https://github.com/jameslnewell/git-diff/pull/28) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+
+#### 🐛 Bug Fix
+
+- Bump picomatch from 4.0.5 to 4.0.7 [#35](https://github.com/jameslnewell/git-diff/pull/35) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump prettier from 3.9.5 to 3.9.6 [#32](https://github.com/jameslnewell/git-diff/pull/32) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump prettier from 3.9.4 to 3.9.5 [#29](https://github.com/jameslnewell/git-diff/pull/29) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump picomatch from 4.0.4 to 4.0.5 [#27](https://github.com/jameslnewell/git-diff/pull/27) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump prettier from 3.8.3 to 3.8.4 [#23](https://github.com/jameslnewell/git-diff/pull/23) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+
+#### Authors: 2
+
+- [@dependabot[bot]](https://github.com/dependabot[bot])
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.4.1 (Mon May 25 2026)
 
 #### 🐛 Bug Fix
