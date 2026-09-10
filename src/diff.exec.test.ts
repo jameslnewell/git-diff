@@ -133,10 +133,10 @@ suite('error classification', () => {
     throws(() => Diff.diffSync({base: 'non-existent-ref'}), expected);
   });
 
-  test('a ref that is neither base nor head stays unattributed', () => {
-    // git names a ref the caller did not pass — e.g. one that appeared inside a
-    // revision expression. Nothing can be concluded about which argument was
-    // at fault, so neither guard should claim it.
+  test('a ref matching neither argument is still a GitDiffError', () => {
+    // Real git echoes the argument verbatim, so this shouldn't happen — the
+    // branch exists so an unattributable ref failure doesn't escape as a raw
+    // exec error. Only a mock can reach it.
     results = [{error: foreignError(stderr)}];
     throws(() => Diff.diffSync({base: 'main', head: 'HEAD'}), {
       name: 'GitDiffError',

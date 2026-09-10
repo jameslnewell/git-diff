@@ -67,7 +67,7 @@ suite(Diff.diffAsync.name, () => {
       () =>
         Diff.diffAsync({
           cwd: repository.cwd,
-          base: 'HEAD~2',
+          base: 'main',
           head: 'non-existent-ref',
         }),
       {
@@ -132,7 +132,7 @@ suite(Diff.diffSync.name, () => {
       () =>
         Diff.diffSync({
           cwd: repository.cwd,
-          base: 'HEAD~2',
+          base: 'main',
           head: 'non-existent-ref',
         }),
       {
@@ -298,19 +298,52 @@ suite(Diff.isBaseDoesNotExistError.name, () => {
 
     const missingHead = await Diff.diffAsync({
       cwd: repository.cwd,
-      base: 'HEAD~2',
+      base: 'main',
       head: 'non-existent-ref',
     }).catch((error: unknown) => error);
     equal(Diff.isBaseDoesNotExistError(missingHead), false);
-    equal(Diff.isHeadDoesNotExistError(missingHead), true);
   });
 
-  test('false for a failure that is not a missing ref', async () => {
-    const error = await Diff.diffAsync({cwd: '/'}).catch(
+  test('true for a base sha the repository does not have', async (t) => {
+    // a full-length object id is reported as `bad object`, not `bad revision`
+    const repository = useRepository(t);
+    const error = await Diff.diffAsync({
+      cwd: repository.cwd,
+      base: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+      head: 'HEAD',
+    }).catch((error: unknown) => error);
+    equal(Diff.isBaseDoesNotExistError(error), true);
+  });
+
+  test('false for a failure that is not a missing ref', async (t) => {
+    const repository = useRepository(t);
+    repository.destroy();
+    const error = await Diff.diffAsync({cwd: repository.cwd}).catch(
       (error: unknown) => error,
     );
+    ok(error instanceof Error, 'expected the diff to fail');
     equal(Diff.isBaseDoesNotExistError(error), false);
     equal(Diff.isBadRevisionError(error), false);
+  });
+});
+
+suite(Diff.isHeadDoesNotExistError.name, () => {
+  test('true for a missing head, false for a missing base', async (t) => {
+    const repository = useRepository(t);
+
+    const missingHead = await Diff.diffAsync({
+      cwd: repository.cwd,
+      base: 'main',
+      head: 'non-existent-ref',
+    }).catch((error: unknown) => error);
+    equal(Diff.isHeadDoesNotExistError(missingHead), true);
+
+    const missingBase = await Diff.diffAsync({
+      cwd: repository.cwd,
+      base: 'non-existent-ref',
+      head: 'HEAD',
+    }).catch((error: unknown) => error);
+    equal(Diff.isHeadDoesNotExistError(missingBase), false);
   });
 });
 
@@ -319,7 +352,7 @@ suite(Diff.isBadRevisionError.name, () => {
     const repository = useRepository(t);
     for (const options of [
       {base: 'non-existent-ref', head: 'HEAD'},
-      {base: 'HEAD~2', head: 'non-existent-ref'},
+      {base: 'main', head: 'non-existent-ref'},
     ]) {
       const error = await Diff.diffAsync({
         cwd: repository.cwd,
@@ -327,5 +360,18 @@ suite(Diff.isBadRevisionError.name, () => {
       }).catch((error: unknown) => error);
       equal(Diff.isBadRevisionError(error), true);
     }
+  });
+
+  test('still recognises an error from an older copy of this library', () => {
+    // 0.5 threw this shape, with no `ref`. A consumer can have both versions
+    // resolved at once, which is the whole reason these guards duck-type.
+    equal(
+      Diff.isBadRevisionError({
+        name: 'GitDiffError',
+        code: 'BAD_REVISION',
+        message: 'The ref does not exist: v1.2.3',
+      }),
+      true,
+    );
   });
 });

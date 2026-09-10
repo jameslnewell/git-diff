@@ -144,6 +144,8 @@ git says which ref it rejected but not which argument that was, so the library m
 
 Both narrow the error to `{name, code, message, ref}`, where `ref` is the ref that doesn't exist. Both duck-type rather than using `instanceof`, which breaks across dual-package installs, bundler boundaries and module realms.
 
+git names only the _first_ ref it rejected, so `isBaseDoesNotExistError` doesn't imply the head is fine — if both are missing, the retry against the empty tree will say so.
+
 `Diff.isBadRevisionError` is deprecated: it is true for a missing `base` _or_ `head`, so using it to pick a fallback base takes that branch for a typo'd `head` too — then diffs and logs something other than what actually failed.
 
 ### The empty tree
@@ -158,7 +160,7 @@ Don't reach for the repository's root commit instead. A root commit is only "not
 
 ### How git is invoked
 
-Commands run with `LC_ALL=C`, so `isBadRevisionError` isn't defeated by a localised git, and `GIT_TERMINAL_PROMPT=0`, which stops git prompting on the terminal. The rest of the environment is inherited — including `GIT_ASKPASS`/`SSH_ASKPASS` and any configured credential helper, which are not neutralised, though none of the commands run here reach the network.
+Commands run with `LC_ALL=C`, so the missing-ref guards aren't defeated by a localised git, and `GIT_TERMINAL_PROMPT=0`, which stops git prompting on the terminal. The rest of the environment is inherited — including `GIT_ASKPASS`/`SSH_ASKPASS` and any configured credential helper, which are not neutralised, though none of the commands run here reach the network.
 
 Paths are read with `core.quotePath=false`, so non-ASCII filenames come back as themselves rather than octal escapes. Paths containing a tab, newline, quote or backslash are still quoted by git and are not currently unquoted.
 
@@ -172,7 +174,9 @@ They now return the empty tree id rather than the repository's root commit, and 
 
 `isBadRevisionError` is deprecated in favour of `isBaseDoesNotExistError` and `isHeadDoesNotExistError`. It still returns `true` for both, so existing calls keep working — but a caller using it to choose a fallback base was also taking that branch for a missing `head`. Swap it for `isBaseDoesNotExistError`.
 
-The thrown error's `code` is now `BASE_DOES_NOT_EXIST` or `HEAD_DOES_NOT_EXIST` rather than `BAD_REVISION`, and carries the `ref`. Code matching on the string `'BAD_REVISION'` directly needs updating; `BAD_REVISION` remains for a rejected ref that is neither argument.
+The thrown error's `code` is now `BASE_DOES_NOT_EXIST` or `HEAD_DOES_NOT_EXIST` rather than `BAD_REVISION`, and carries the `ref`. Code matching on the string `'BAD_REVISION'` directly needs updating.
+
+`isBadRevisionError` narrows `code` to a union of the three values rather than the literal `'BAD_REVISION'`, so an annotation or exhaustive `switch` written against the old literal needs widening.
 
 ## License
 
