@@ -11,8 +11,33 @@ const execFileAsync = promisify(execFile);
 const baseDoesNotExistErrorCode = 'BASE_DOES_NOT_EXIST';
 const headDoesNotExistErrorCode = 'HEAD_DOES_NOT_EXIST';
 const badRevisionErrorCode = 'BAD_REVISION';
+const noMergeBaseErrorCode = 'NO_MERGE_BASE';
 
 export type Path = string;
+/**
+ * How a path differs between the two points being compared.
+ *
+ * **These describe two snapshots, not a range of commits.** `diffAsync` runs
+ * `git diff <base> <head>`, which compares the trees those refs point at — it
+ * does not replay what happened in between. So a status says how `head` differs
+ * from `base`, never what some commit did.
+ *
+ * That reads naturally while `base` is an ancestor of `head`, where the two
+ * coincide. It stops being intuitive the moment it isn't: against a `base` that
+ * has moved on since `head` forked, a file the *base* added is reported as
+ * {@link Status.Deleted}, because it is genuinely absent from `head`.
+ *
+ * Both readings are useful and neither is a bug. Pick deliberately:
+ *
+ * - *"how does `head` differ from what's over there?"* — diff against the ref
+ *   directly. Right when you are about to make one match the other.
+ * - *"what did this branch change?"* — diff from {@link mergeBaseAsync}, the
+ *   point the two forked at, which is an ancestor of `head` by construction and
+ *   so has no reversed statuses.
+ *
+ * Path membership is unaffected either way, so {@link any} and the
+ * {@link filterByPaths} family are safe under both.
+ */
 export type Status = 'A' | 'C' | 'D' | 'M' | 'R' | 'X';
 export const Status = {
   Added: 'A' as const,
@@ -200,12 +225,36 @@ function stderrOf(error: unknown): string {
 }
 
 /**
+ * The exit status of a failed `git`, however that error reached us.
+ *
+ * The two exec flavours disagree on the property: promisified `execFile`
+ * rejects with `code`, while `execFileSync` throws with `status`. Reading only
+ * one of them would make a check pass on `diffAsync` and silently never fire on
+ * `diffSync`. Not guarded on `instanceof Error`, for the reason given on
+ * {@link stderrOf}.
+ *
+ * `undefined` means git never ran to completion — a spawn failure carries an
+ * `ENOENT`-style code and no numeric status at all, since nothing here goes
+ * through a shell. Anything reading this to mean "exited cleanly" would be
+ * wrong.
+ */
+function exitStatusOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const {code, status} = error as {code?: unknown; status?: unknown};
+  if (typeof code === 'number') return code;
+  if (typeof status === 'number') return status;
+  return undefined;
+}
+
+/**
  * The ref git refused to resolve, if that is what went wrong.
  *
- * Two wordings, because git reports a full-length object id it doesn't have
+ * Four wordings: git reports a full-length object id it doesn't have
  * differently from everything else — the shape a `base` carried over from an
- * earlier build takes in a shallow checkout. Both echo the argument
- * **verbatim**, which is what makes attributing it below sound.
+ * earlier build takes in a shallow checkout — and `merge-base` differs again
+ * from `diff`, with a further variant for a ref that resolves to something
+ * other than a commit. All four echo the argument **verbatim**, which is what
+ * makes attributing it below sound.
  *
  * Some failures name no ref at all (`main@{upstream}` on a branch with no
  * upstream, say). Those stay unclassified and the original error is rethrown.
@@ -213,7 +262,11 @@ function stderrOf(error: unknown): string {
 function rejectedRef(stderr: string): string | undefined {
   return (
     /fatal: bad revision '(.*)'/.exec(stderr)?.[1] ??
-    /fatal: bad object (\S+)/.exec(stderr)?.[1]
+    /fatal: bad object (\S+)/.exec(stderr)?.[1] ??
+    // `merge-base` does not quote the argument and it may contain spaces, so
+    // these run to end of line rather than stopping at the first one
+    /fatal: Not a valid object name (.+)$/m.exec(stderr)?.[1] ??
+    /fatal: Not a valid commit name (.+)$/m.exec(stderr)?.[1]
   );
 }
 
@@ -313,6 +366,69 @@ export function isHeadDoesNotExistError(
 }
 
 /**
+ * Whether a call failed because one of the refs it was given does not resolve,
+ * whichever ref that was.
+ *
+ * The narrower {@link isBaseDoesNotExistError} says the failing ref was the
+ * `base`, which is the one worth recovering from for a diff. `mergeBaseAsync`
+ * has no base and no head — just refs — so its ref failures cannot be attributed
+ * that way, and this is the guard to catch them with. The common cause in CI is
+ * an `origin/<branch>` that was never fetched.
+ *
+ * `ref` names the ref git rejected.
+ */
+export function isRefDoesNotExistError(error: unknown): error is {
+  name: 'GitDiffError';
+  code: 'BASE_DOES_NOT_EXIST' | 'HEAD_DOES_NOT_EXIST' | 'BAD_REVISION';
+  message: string;
+  ref: string;
+} {
+  return (
+    isGitDiffError(error, [
+      baseDoesNotExistErrorCode,
+      headDoesNotExistErrorCode,
+      badRevisionErrorCode,
+    ]) && hasRef(error)
+  );
+}
+
+/**
+ * Whether {@link mergeBaseAsync} / {@link mergeBaseSync} failed because the
+ * refs share no ancestor at all — two histories grafted into one repository, or
+ * a clone shallow enough that the common ancestor was never fetched.
+ *
+ * This is an outcome to handle rather than a mistake: it is what "I cannot tell
+ * what this branch changed" looks like, and the usual answer is to diff from
+ * {@link emptyTreeAsync} instead and treat every file as changed.
+ *
+ * It is an error rather than an `undefined` return **on purpose**. A missing
+ * merge base and a broken git are both failures of the same call, and an API
+ * that flattened them into one value would invite `?? fallback` at the call
+ * site — silently converting "git is not installed" or "this object store is
+ * corrupt" into a full rebuild, forever, with nothing in the log to say so.
+ * Making the benign case the one you have to name keeps the other one loud.
+ *
+ * @example
+ * ```ts
+ * let base: string;
+ * try {
+ *   base = await mergeBaseAsync({refs: ['origin/main', 'HEAD']});
+ * } catch (error) {
+ *   if (!isNoMergeBaseError(error)) throw error;
+ *   base = await emptyTreeAsync();
+ * }
+ * const diff = await diffAsync({base, head: 'HEAD'});
+ * ```
+ */
+export function isNoMergeBaseError(error: unknown): error is {
+  name: 'GitDiffError';
+  code: 'NO_MERGE_BASE';
+  message: string;
+} {
+  return isGitDiffError(error, [noMergeBaseErrorCode]);
+}
+
+/**
  * @deprecated Use {@link isBaseDoesNotExistError}, which says *which* ref was
  * missing. This is true for a missing `base` or `head` alike, so a caller using
  * it to decide on a fallback base would take that branch for a typo'd `head`
@@ -362,6 +478,11 @@ export function parse(stdout: string): Diff {
 
 export interface DiffOptions {
   cwd?: string | undefined;
+  /**
+   * What to compare against. This is a **snapshot**, not the start of a range:
+   * where it isn't an ancestor of `head`, statuses read in reverse — see
+   * {@link Status}, and {@link mergeBaseAsync} for the other reading.
+   */
   base?: string | undefined;
   head?: string | undefined;
 }
@@ -510,6 +631,118 @@ export function emptyTreeSync(options: EmptyTreeOptions = {}): string {
     return parseEmptyTree(stdout);
   } catch (error) {
     handleErrors(error);
+  }
+}
+
+export interface MergeBaseOptions {
+  cwd?: string | undefined;
+  /**
+   * The two refs to find the common ancestor of, in either order.
+   *
+   * Exactly two, deliberately. Plain `git merge-base` privileges its first
+   * argument for three or more — `merge-base a b c` and `merge-base c b a`
+   * return different commits, and the first can be a descendant of the true
+   * common ancestor rather than an ancestor of all three. Answering that
+   * properly needs `--octopus`, which nothing has asked for; with two refs the
+   * result is genuinely symmetric.
+   */
+  refs: [string, string];
+}
+
+/** Convert options into arguments */
+function mergeBaseArgs(
+  options: MergeBaseOptions,
+): [string, string[], {encoding: 'utf8'; cwd?: string | undefined}] {
+  return [
+    'git',
+    [
+      'merge-base',
+      // `--fork-point` is deliberately not offered: it consults the reflog,
+      // which a fresh CI checkout does not have, so it would answer differently
+      // on a developer's machine and on a build agent without either being
+      // wrong. `--` keeps a ref that begins with a dash from turning into that
+      // option — or into `--all`, whose multi-line output would be handed on as
+      // if it were one commit.
+      '--',
+      ...options.refs,
+    ],
+    {encoding: 'utf8', cwd: options.cwd},
+  ];
+}
+
+/**
+ * Classifies a failed `git merge-base`.
+ *
+ * git separates its two failures by exit status: **1** means the refs share no
+ * ancestor, while a ref it could not resolve exits **128** and names it on
+ * stderr. Reading the status is the whole of the distinction — a spawn failure
+ * carries no numeric status at all, so it cannot be mistaken for either.
+ *
+ * stderr is checked for a rejected ref rather than for being empty. git exits 1
+ * with an *empty stdout* for "no merge base", but it may still have written a
+ * warning — `warning: refname 'x' is ambiguous` when a tag and a branch share a
+ * name, which is ordinary enough in CI — and requiring silence there would send
+ * that case down the unclassified path, defeating the fallback this exists for.
+ */
+function handleMergeBaseErrors(
+  error: unknown,
+  options: MergeBaseOptions,
+): never {
+  if (exitStatusOf(error) === 1 && rejectedRef(stderrOf(error)) === undefined) {
+    throw new GitDiffError(
+      noMergeBaseErrorCode,
+      `The refs share no common ancestor: ${options.refs.join(', ')}`,
+      {cause: error},
+    );
+  }
+  handleErrors(error);
+}
+
+/**
+ * Get the commit two refs forked at — the base to diff from when you want *what
+ * this branch changed* rather than *how these two trees differ*. See the note on
+ * {@link Status} for which of those you want.
+ *
+ * Throws {@link isNoMergeBaseError} when the refs share no ancestor, and a ref
+ * error when one of them doesn't resolve — see {@link isRefDoesNotExistError}.
+ *
+ * @example
+ * ```ts
+ * const base = await mergeBaseAsync({refs: ['origin/main', 'HEAD']});
+ * const diff = await diffAsync({base, head: 'HEAD'});
+ * ```
+ */
+export async function mergeBaseAsync(
+  options: MergeBaseOptions,
+): Promise<string> {
+  try {
+    const {stdout} = await execAsync(...mergeBaseArgs(options));
+    return stdout.trim();
+  } catch (error) {
+    handleMergeBaseErrors(error, options);
+  }
+}
+
+/**
+ * Get the commit two refs forked at — the base to diff from when you want *what
+ * this branch changed* rather than *how these two trees differ*. See the note on
+ * {@link Status} for which of those you want.
+ *
+ * Throws {@link isNoMergeBaseError} when the refs share no ancestor, and a ref
+ * error when one of them doesn't resolve — see {@link isRefDoesNotExistError}.
+ *
+ * @example
+ * ```ts
+ * const base = mergeBaseSync({refs: ['origin/main', 'HEAD']});
+ * const diff = diffSync({base, head: 'HEAD'});
+ * ```
+ */
+export function mergeBaseSync(options: MergeBaseOptions): string {
+  try {
+    const stdout = execSync(...mergeBaseArgs(options));
+    return stdout.trim();
+  } catch (error) {
+    handleMergeBaseErrors(error, options);
   }
 }
 
