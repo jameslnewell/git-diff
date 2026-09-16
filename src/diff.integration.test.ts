@@ -375,3 +375,245 @@ suite(Diff.isBadRevisionError.name, () => {
     );
   });
 });
+
+/**
+ * A repository whose `main` has moved on since `feature` forked from it:
+ * `shared.txt` predates the fork, `on-main.txt` was added to `main` afterwards,
+ * and `on-feature.txt` only exists on the branch. Checked out on `feature`.
+ *
+ * The fork being behind `main` is the whole point — it is the only shape in
+ * which a merge base and a plain two-ref diff disagree.
+ */
+interface ForkedRepository extends Repository {
+  /** The commit `feature` forked from, which is what a merge base must return. */
+  forkPoint: string;
+}
+
+/**
+ * The error a call rejected with, for assertions that need the value itself
+ * rather than a shape to match — `rejects` cannot run a type guard over it.
+ */
+async function rejection(fn: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected the call to reject');
+}
+
+function useForkedRepository(t: TestContext): ForkedRepository {
+  const repository = createRepository();
+  t.after(() => repository.destroy());
+  repository.commit({files: {'shared.txt': 'shared'}});
+  const forkPoint = repository.git('rev-parse', 'HEAD');
+
+  repository.git('checkout', '--quiet', '-b', 'feature');
+  repository.commit({files: {'on-feature.txt': 'feature'}});
+
+  repository.git('checkout', '--quiet', 'main');
+  repository.commit({files: {'on-main.txt': 'main'}});
+
+  repository.git('checkout', '--quiet', 'feature');
+  return Object.assign(repository, {forkPoint});
+}
+
+suite(Diff.mergeBaseAsync.name, () => {
+  test('returns the commit the refs forked at', async (t) => {
+    const repository = useForkedRepository(t);
+
+    equal(
+      await Diff.mergeBaseAsync({
+        cwd: repository.cwd,
+        refs: ['main', 'HEAD'],
+      }),
+      repository.forkPoint,
+    );
+  });
+
+  // The other tests in this suite pin the error codes, which are internal
+  // shape. These are the guards consumers actually reach for, and the property
+  // that makes both of them necessary is that each is false for the other's
+  // failure —
+  // `isBaseDoesNotExistError` included, since `merge-base` has no base to
+  // attribute a rejected ref to and so classifies it as `BAD_REVISION`.
+  test('the guards tell a missing merge base from a missing ref', async (t) => {
+    const repository = useForkedRepository(t);
+    repository.git('checkout', '--quiet', '--orphan', 'unrelated');
+    repository.git('rm', '--quiet', '-rf', '.');
+    repository.commit({files: {'unrelated.txt': 'unrelated'}});
+    repository.git('checkout', '--quiet', 'main');
+
+    const noMergeBase = await rejection(() =>
+      Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['main', 'unrelated']}),
+    );
+    ok(Diff.isNoMergeBaseError(noMergeBase));
+    ok(!Diff.isRefDoesNotExistError(noMergeBase));
+
+    // the shape of a CI job that never fetched the branch it is comparing to
+    const missingRef = await rejection(() =>
+      Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['origin/main', 'HEAD']}),
+    );
+    ok(Diff.isRefDoesNotExistError(missingRef));
+    ok(!Diff.isNoMergeBaseError(missingRef));
+    ok(!Diff.isBaseDoesNotExistError(missingRef));
+  });
+
+  test('is symmetric', async (t) => {
+    const repository = useForkedRepository(t);
+
+    equal(
+      await Diff.mergeBaseAsync({
+        cwd: repository.cwd,
+        refs: ['HEAD', 'main'],
+      }),
+      repository.forkPoint,
+    );
+  });
+
+  // the reason this exists: against `main` itself the branch also looks like it
+  // *deleted* the file `main` added after the fork, because a diff compares two
+  // trees rather than replaying commits
+  test('is the base that reports only what the branch changed', async (t) => {
+    const repository = useForkedRepository(t);
+
+    deepEqual(
+      await Diff.diffAsync({
+        cwd: repository.cwd,
+        base: await Diff.mergeBaseAsync({
+          cwd: repository.cwd,
+          refs: ['main', 'HEAD'],
+        }),
+        head: 'HEAD',
+      }),
+      {'on-feature.txt': Diff.Status.Added},
+    );
+
+    deepEqual(
+      await Diff.diffAsync({cwd: repository.cwd, base: 'main', head: 'HEAD'}),
+      {
+        'on-feature.txt': Diff.Status.Added,
+        'on-main.txt': Diff.Status.Deleted,
+      },
+    );
+  });
+
+  test('throws when the refs share no common ancestor', async (t) => {
+    const repository = useForkedRepository(t);
+    repository.git('checkout', '--quiet', '--orphan', 'unrelated');
+    repository.git('rm', '--quiet', '-rf', '.');
+    repository.commit({files: {'unrelated.txt': 'unrelated'}});
+
+    await rejects(
+      () =>
+        Diff.mergeBaseAsync({
+          cwd: repository.cwd,
+          refs: ['main', 'unrelated'],
+        }),
+      {
+        name: 'GitDiffError',
+        code: 'NO_MERGE_BASE',
+        message: 'The refs share no common ancestor: main, unrelated',
+      },
+    );
+  });
+
+  // git exits 1 with an empty stdout for "no merge base", but it may still have
+  // written a warning — requiring stderr to be empty would send this case down
+  // the unclassified path and defeat the documented fallback
+  test('classifies a missing merge base even when git warns alongside it', async (t) => {
+    const repository = useForkedRepository(t);
+    repository.git('checkout', '--quiet', '--orphan', 'dup');
+    repository.git('rm', '--quiet', '-rf', '.');
+    repository.commit({files: {'dup.txt': 'dup'}});
+    // a tag and a branch sharing a name, which git warns about on every use
+    repository.git('tag', 'dup', 'dup');
+    repository.git('checkout', '--quiet', 'main');
+
+    await rejects(
+      () => Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['main', 'dup']}),
+      {name: 'GitDiffError', code: 'NO_MERGE_BASE'},
+    );
+  });
+
+  // without `--`, git reads this as the reflog-dependent option the docs say is
+  // not offered — and answers successfully
+  test('treats a ref beginning with a dash as a ref, not an option', async (t) => {
+    const repository = useForkedRepository(t);
+
+    await rejects(
+      () =>
+        Diff.mergeBaseAsync({
+          cwd: repository.cwd,
+          refs: ['--fork-point', 'HEAD'],
+        }),
+      {name: 'GitDiffError', ref: '--fork-point'},
+    );
+  });
+
+  test('a missing ref is a ref failure, not a missing merge base', async (t) => {
+    const repository = useForkedRepository(t);
+
+    await rejects(
+      () =>
+        Diff.mergeBaseAsync({
+          cwd: repository.cwd,
+          refs: ['non-existent-ref', 'HEAD'],
+        }),
+      {
+        name: 'GitDiffError',
+        code: 'BAD_REVISION',
+        message: 'The ref does not exist: non-existent-ref',
+        ref: 'non-existent-ref',
+      },
+    );
+  });
+});
+
+suite(Diff.mergeBaseSync.name, () => {
+  test('a missing ref is a ref failure, not a missing merge base', (t) => {
+    const repository = useForkedRepository(t);
+
+    throws(
+      () =>
+        Diff.mergeBaseSync({
+          cwd: repository.cwd,
+          refs: ['non-existent-ref', 'HEAD'],
+        }),
+      {
+        name: 'GitDiffError',
+        code: 'BAD_REVISION',
+        message: 'The ref does not exist: non-existent-ref',
+        ref: 'non-existent-ref',
+      },
+    );
+  });
+
+  test('returns the commit the refs forked at', (t) => {
+    const repository = useForkedRepository(t);
+
+    equal(
+      Diff.mergeBaseSync({cwd: repository.cwd, refs: ['main', 'HEAD']}),
+      repository.forkPoint,
+    );
+  });
+
+  // the sync path reads the exit status from `status` rather than `code`, so
+  // classification has to be proven separately from the async one
+  test('throws when the refs share no common ancestor', (t) => {
+    const repository = useForkedRepository(t);
+    repository.git('checkout', '--quiet', '--orphan', 'unrelated');
+    repository.git('rm', '--quiet', '-rf', '.');
+    repository.commit({files: {'unrelated.txt': 'unrelated'}});
+
+    throws(
+      () =>
+        Diff.mergeBaseSync({cwd: repository.cwd, refs: ['main', 'unrelated']}),
+      {
+        name: 'GitDiffError',
+        code: 'NO_MERGE_BASE',
+        message: 'The refs share no common ancestor: main, unrelated',
+      },
+    );
+  });
+});

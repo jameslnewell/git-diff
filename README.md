@@ -135,6 +135,58 @@ try {
 }
 ```
 
+### What a branch changed, vs. how two trees differ
+
+`diffAsync` runs `git diff <base> <head>`, which compares the two **snapshots** those refs point at. It does not replay what happened in between, so a `Status` says how `head` differs from `base` — never what some commit did.
+
+While `base` is an ancestor of `head` the two readings coincide, which is why a mutable tag like `last-deployment` behaves intuitively. They part company as soon as it isn't. Against a `main` that has moved on since your branch forked, a file **`main` added** is reported as `Deleted`, because it is genuinely absent from `head`:
+
+```ts
+await Diff.diffAsync({base: 'main', head: 'HEAD'});
+// {'on-feature.txt': 'A', 'on-main.txt': 'D'}
+```
+
+Neither reading is wrong; they answer different questions. Pick deliberately:
+
+- **"How does `head` differ from what's over there?"** — diff against the ref directly. This is what you want when you are about to make one match the other, such as deploying a branch over an environment.
+- **"What did this branch change?"** — diff from `mergeBaseAsync`, the commit the two forked at. It is an ancestor of `head` by construction, so no status is ever reversed.
+
+```ts
+import * as Diff from '@jameslnewell/git-diff';
+
+const base = await Diff.mergeBaseAsync({refs: ['origin/main', 'HEAD']});
+await Diff.diffAsync({base, head: 'HEAD'});
+// {'on-feature.txt': 'A'}
+```
+
+Path membership is unaffected either way, so `any` and the `filterByPaths` family are safe under both.
+
+`refs` takes exactly two, in either order. Three or more is deliberately not accepted: plain `git merge-base` privileges its first argument, so `merge-base a b c` and `merge-base c b a` return different commits and the first can be a descendant of the true common ancestor. `--fork-point` is not offered either — it consults the reflog, which a fresh CI checkout does not have, so it would answer differently on a developer's machine and on a build agent.
+
+#### When there is no common ancestor
+
+`mergeBaseAsync` throws when the refs share no ancestor — unrelated histories grafted into one repository, or a clone shallow enough that the fork point was never fetched. Catch it with `Diff.isNoMergeBaseError` and fall back to the empty tree:
+
+```ts
+import * as Diff from '@jameslnewell/git-diff';
+
+let base: string;
+try {
+  base = await Diff.mergeBaseAsync({refs: ['origin/main', 'HEAD']});
+} catch (error) {
+  // `isRefDoesNotExistError` covers the other common CI case: an
+  // `origin/<branch>` that was never fetched
+  if (!Diff.isNoMergeBaseError(error) && !Diff.isRefDoesNotExistError(error)) {
+    throw error;
+  }
+  base = await Diff.emptyTreeAsync();
+}
+
+const diff = await Diff.diffAsync({base, head: 'HEAD'});
+```
+
+It throws rather than returning `undefined` deliberately — see `isNoMergeBaseError` for why, and why that keeps a broken git loud.
+
 ### Missing refs
 
 git says which ref it rejected but not which argument that was, so the library matches it against the options the command was built from and reports it:
