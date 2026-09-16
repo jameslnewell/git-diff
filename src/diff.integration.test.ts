@@ -389,6 +389,19 @@ interface ForkedRepository extends Repository {
   forkPoint: string;
 }
 
+/**
+ * The error a call rejected with, for assertions that need the value itself
+ * rather than a shape to match — `rejects` cannot run a type guard over it.
+ */
+async function rejection(fn: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected the call to reject');
+}
+
 function useForkedRepository(t: TestContext): ForkedRepository {
   const repository = createRepository();
   t.after(() => repository.destroy());
@@ -416,6 +429,34 @@ suite(Diff.mergeBaseAsync.name, () => {
       }),
       repository.forkPoint,
     );
+  });
+
+  // The other tests in this suite pin the error codes, which are internal
+  // shape. These are the guards consumers actually reach for, and the property
+  // that makes both of them necessary is that each is false for the other's
+  // failure —
+  // `isBaseDoesNotExistError` included, since `merge-base` has no base to
+  // attribute a rejected ref to and so classifies it as `BAD_REVISION`.
+  test('the guards tell a missing merge base from a missing ref', async (t) => {
+    const repository = useForkedRepository(t);
+    repository.git('checkout', '--quiet', '--orphan', 'unrelated');
+    repository.git('rm', '--quiet', '-rf', '.');
+    repository.commit({files: {'unrelated.txt': 'unrelated'}});
+    repository.git('checkout', '--quiet', 'main');
+
+    const noMergeBase = await rejection(() =>
+      Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['main', 'unrelated']}),
+    );
+    ok(Diff.isNoMergeBaseError(noMergeBase));
+    ok(!Diff.isRefDoesNotExistError(noMergeBase));
+
+    // the shape of a CI job that never fetched the branch it is comparing to
+    const missingRef = await rejection(() =>
+      Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['origin/main', 'HEAD']}),
+    );
+    ok(Diff.isRefDoesNotExistError(missingRef));
+    ok(!Diff.isNoMergeBaseError(missingRef));
+    ok(!Diff.isBaseDoesNotExistError(missingRef));
   });
 
   test('is symmetric', async (t) => {
