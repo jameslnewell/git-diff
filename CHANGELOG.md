@@ -1,3 +1,15 @@
+# v0.7.0 (Wed Sep 16 2026)
+
+#### 🚀 Enhancement
+
+- Add mergeBaseAsync/mergeBaseSync for diffing what a branch changed [#41](https://github.com/jameslnewell/git-diff/pull/41) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.6.0 (Thu Sep 10 2026)
 
 #### 🚀 Enhancement
