@@ -1,3 +1,18 @@
+# v0.7.1 (Mon Oct 05 2026)
+
+#### 🐛 Bug Fix
+
+- Remove the unused fast-glob dependency [#47](https://github.com/jameslnewell/git-diff/pull/47) ([@jctdeemenu](https://github.com/jctdeemenu))
+- Bump prettier from 3.9.8 to 3.9.9 [#46](https://github.com/jameslnewell/git-diff/pull/46) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump prettier from 3.9.6 to 3.9.8 [#44](https://github.com/jameslnewell/git-diff/pull/44) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+
+#### Authors: 2
+
+- [@dependabot[bot]](https://github.com/dependabot[bot])
+- John Christopher Dee ([@jctdeemenu](https://github.com/jctdeemenu))
+
+---
+
 # v0.7.0 (Wed Sep 16 2026)
 
 #### 🚀 Enhancement
