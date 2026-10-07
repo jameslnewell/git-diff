@@ -76,6 +76,15 @@ suite(Diff.filterByPaths.name, () => {
   test('returns empty diff for an empty input', () => {
     deepEqual(Diff.filterByPaths({}, ['src/**']), {});
   });
+
+  test('keeps dotfiles whose path matches a glob', () => {
+    deepEqual(
+      Diff.filterByPaths({'infra/.terraform.lock.hcl': Diff.Status.Modified}, [
+        'infra/**',
+      ]),
+      {'infra/.terraform.lock.hcl': Diff.Status.Modified},
+    );
+  });
 });
 
 suite(Diff.filterByStatuses.name, () => {
@@ -162,6 +171,13 @@ suite(Diff.any.name, () => {
   test('returns false when nothing matches', () => {
     equal(Diff.any(diff, 'no/such/path'), false);
   });
+
+  test('returns true when a glob matches a dotfile', () => {
+    equal(
+      Diff.any({'infra/.terraform.lock.hcl': Diff.Status.Modified}, 'infra/**'),
+      true,
+    );
+  });
 });
 
 suite(Diff.added.name, () => {
@@ -242,6 +258,16 @@ suite(Diff.modified.name, () => {
 
   test('with paths: true when a Modified entry matches', () => {
     equal(Diff.modified(diff, 'src/utils.ts'), true);
+  });
+
+  test('with paths: true when a Modified dotfile matches the glob', () => {
+    equal(
+      Diff.modified(
+        {'infra/.terraform.lock.hcl': Diff.Status.Modified},
+        'infra/**',
+      ),
+      true,
+    );
   });
 
   test('with paths: false when path matches but no Modified entry', () => {

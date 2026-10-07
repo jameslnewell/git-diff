@@ -59,8 +59,15 @@ function empty(diff: Diff): boolean {
   return true;
 }
 
+// picomatch skips dotfiles by default, so `infrastructure/**` wouldn't match
+// `infrastructure/.terraform.lock.hcl`. A diff is a list of files that actually
+// changed, so a dotfile is as much a change to the directory as any other file.
+function createPathMatcher(paths: Path[]): (path: Path) => boolean {
+  return glob(paths, {dot: true});
+}
+
 export function filterByPaths(diff: Diff, paths: Path[]): Diff {
-  const matcher = glob(paths);
+  const matcher = createPathMatcher(paths);
   const out: Diff = {};
   for (const [p, status] of Object.entries(diff)) {
     if (matcher(p)) out[p] = status;
@@ -90,7 +97,8 @@ function containsPathsWithStatus(
   status: Status,
   paths?: Path | Path[],
 ): boolean {
-  const matcher = paths !== undefined ? glob(toArray(paths)) : null;
+  const matcher =
+    paths !== undefined ? createPathMatcher(toArray(paths)) : null;
   for (const [p, s] of Object.entries(diff)) {
     if (s !== status) continue;
     if (matcher && !matcher(p)) continue;
@@ -101,7 +109,7 @@ function containsPathsWithStatus(
 
 export function any(diff: Diff, paths?: Path | Path[]): boolean {
   if (paths === undefined) return !empty(diff);
-  const matcher = glob(toArray(paths));
+  const matcher = createPathMatcher(toArray(paths));
   for (const p in diff) {
     if (matcher(p)) return true;
   }
