@@ -49,7 +49,7 @@ if (Diff.added(diff, 'prisma/*') || Diff.modified(diff, 'prisma/*')) {
 
 ### Predicates
 
-Each predicate returns `true` when at least one path matches. The optional second argument is a path or glob (or array of either) to scope the check.
+Each predicate returns `true` when at least one path matches. The optional second argument is a path or glob (or array of either) to scope the check. Globs match dotfiles too, so `infra/**` matches `infra/.terraform.lock.hcl`.
 
 - `Diff.any(diff, paths?)` — any file at all
 - `Diff.added(diff, paths?)`
