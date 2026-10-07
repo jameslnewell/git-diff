@@ -1,3 +1,15 @@
+# v0.7.2 (Wed Oct 07 2026)
+
+#### 🐛 Bug Fix
+
+- Match dotfiles in path globs [#48](https://github.com/jameslnewell/git-diff/pull/48) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### Authors: 1
+
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.7.1 (Mon Oct 05 2026)
 
 #### 🐛 Bug Fix
