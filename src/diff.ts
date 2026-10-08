@@ -1,7 +1,7 @@
-import {promisify} from 'node:util';
 import {execFile, execFileSync} from 'node:child_process';
-import glob from 'picomatch';
 import debug from 'debug';
+import glob from 'picomatch';
+import {promisify} from 'node:util';
 
 const execAsyncLog = debug('git-diff:execAsync');
 const execSyncLog = debug('git-diff:execSync');
@@ -89,7 +89,7 @@ export function paths(diff: Diff): Path[] {
 }
 
 export function statuses(diff: Diff): Status[] {
-  return Object.values(diff) as Status[];
+  return Object.values<Status>(diff);
 }
 
 function containsPathsWithStatus(
@@ -196,7 +196,7 @@ function execSync(
     ...options,
     env: env(),
     maxBuffer,
-  }).toString();
+  });
 }
 
 class GitDiffError extends Error {
@@ -229,6 +229,7 @@ class GitDiffError extends Error {
  */
 function stderrOf(error: unknown): string {
   if (typeof error !== 'object' || error === null) return '';
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string -- stderr may be a Buffer, see above
   return String((error as {stderr?: unknown}).stderr ?? '');
 }
 

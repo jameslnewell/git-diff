@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "allowImportingTsExtensions": false
+    "sourceMap": false
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.fixture.ts"]

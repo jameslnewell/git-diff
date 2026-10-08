@@ -1,6 +1,5 @@
-import {suite, test} from 'node:test';
-import {deepEqual, equal, throws} from 'node:assert';
 import * as Diff from './diff.ts';
+import {describe, expect, test} from 'vitest';
 
 const diff: Diff.Diff = {
   'package.json': Diff.Status.Unknown,
@@ -11,49 +10,48 @@ const diff: Diff.Diff = {
   'tsconfig.json': Diff.Status.Unknown,
 };
 
-suite(Diff.parse.name, () => {
+describe('parse', () => {
   test('parses single-status lines', () => {
-    deepEqual(
+    expect(
       Diff.parse('A\tsrc/main.ts\nM\tsrc/utils.ts\nD\tsrc/index.ts\n'),
-      {
-        'src/main.ts': Diff.Status.Added,
-        'src/utils.ts': Diff.Status.Modified,
-        'src/index.ts': Diff.Status.Deleted,
-      },
-    );
+    ).toEqual({
+      'src/main.ts': Diff.Status.Added,
+      'src/utils.ts': Diff.Status.Modified,
+      'src/index.ts': Diff.Status.Deleted,
+    });
   });
 
   test('keeps the leading dot of dotfile paths', () => {
-    deepEqual(Diff.parse('M\t.gitignore\nA\t.buildkite/pipeline.ts\n'), {
+    expect(Diff.parse('M\t.gitignore\nA\t.buildkite/pipeline.ts\n')).toEqual({
       '.gitignore': Diff.Status.Modified,
       '.buildkite/pipeline.ts': Diff.Status.Added,
     });
   });
 
   test('keys a rename on the destination and reduces the score to R', () => {
-    deepEqual(Diff.parse('R100\tDockerfile\tbackend/Dockerfile\n'), {
+    expect(Diff.parse('R100\tDockerfile\tbackend/Dockerfile\n')).toEqual({
       'backend/Dockerfile': Diff.Status.Renamed,
     });
   });
 
   test('keys a copy on the destination path', () => {
-    deepEqual(Diff.parse('C075\tsrc/a.ts\tsrc/b.ts\n'), {
+    expect(Diff.parse('C075\tsrc/a.ts\tsrc/b.ts\n')).toEqual({
       'src/b.ts': Diff.Status.Changed,
     });
   });
 
   test('ignores blank lines', () => {
-    deepEqual(Diff.parse('A\ta.ts\n\n'), {'a.ts': Diff.Status.Added});
+    expect(Diff.parse('A\ta.ts\n\n')).toEqual({'a.ts': Diff.Status.Added});
   });
 
   test('throws on a line with no path', () => {
-    throws(() => Diff.parse('A\n'), /Invalid line in diff output/);
+    expect(() => Diff.parse('A\n')).toThrow(/Invalid line in diff output/);
   });
 });
 
-suite(Diff.filterByPaths.name, () => {
+describe('filterByPaths', () => {
   test('keeps entries whose path matches a glob', () => {
-    deepEqual(Diff.filterByPaths(diff, ['src/**']), {
+    expect(Diff.filterByPaths(diff, ['src/**'])).toEqual({
       'src/main.ts': Diff.Status.Added,
       'src/index.ts': Diff.Status.Deleted,
       'src/utils.ts': Diff.Status.Modified,
@@ -62,7 +60,7 @@ suite(Diff.filterByPaths.name, () => {
   });
 
   test('accepts multiple globs (OR)', () => {
-    deepEqual(Diff.filterByPaths(diff, ['*.json', 'src/main.ts']), {
+    expect(Diff.filterByPaths(diff, ['*.json', 'src/main.ts'])).toEqual({
       'package.json': Diff.Status.Unknown,
       'src/main.ts': Diff.Status.Added,
       'tsconfig.json': Diff.Status.Unknown,
@@ -70,52 +68,50 @@ suite(Diff.filterByPaths.name, () => {
   });
 
   test('returns empty diff when nothing matches', () => {
-    deepEqual(Diff.filterByPaths(diff, ['no/such/path']), {});
+    expect(Diff.filterByPaths(diff, ['no/such/path'])).toEqual({});
   });
 
   test('returns empty diff for an empty input', () => {
-    deepEqual(Diff.filterByPaths({}, ['src/**']), {});
+    expect(Diff.filterByPaths({}, ['src/**'])).toEqual({});
   });
 
   test('keeps dotfiles whose path matches a glob', () => {
-    deepEqual(
+    expect(
       Diff.filterByPaths({'infra/.terraform.lock.hcl': Diff.Status.Modified}, [
         'infra/**',
       ]),
-      {'infra/.terraform.lock.hcl': Diff.Status.Modified},
-    );
+    ).toEqual({'infra/.terraform.lock.hcl': Diff.Status.Modified});
   });
 });
 
-suite(Diff.filterByStatuses.name, () => {
+describe('filterByStatuses', () => {
   test('keeps entries whose status is in the list', () => {
-    deepEqual(Diff.filterByStatuses(diff, [Diff.Status.Added]), {
+    expect(Diff.filterByStatuses(diff, [Diff.Status.Added])).toEqual({
       'src/main.ts': Diff.Status.Added,
     });
   });
 
   test('accepts multiple statuses (OR)', () => {
-    deepEqual(
+    expect(
       Diff.filterByStatuses(diff, [Diff.Status.Added, Diff.Status.Modified]),
-      {
-        'src/main.ts': Diff.Status.Added,
-        'src/utils.ts': Diff.Status.Modified,
-      },
-    );
+    ).toEqual({
+      'src/main.ts': Diff.Status.Added,
+      'src/utils.ts': Diff.Status.Modified,
+    });
   });
 
   test('returns empty diff when no entry has the status', () => {
-    deepEqual(Diff.filterByStatuses(diff, [Diff.Status.Changed]), {});
+    expect(Diff.filterByStatuses(diff, [Diff.Status.Changed])).toEqual({});
   });
 
   test('returns empty diff for an empty input', () => {
-    deepEqual(Diff.filterByStatuses({}, [Diff.Status.Added]), {});
+    expect(Diff.filterByStatuses({}, [Diff.Status.Added])).toEqual({});
   });
 });
 
-suite(Diff.paths.name, () => {
+describe('paths', () => {
   test('returns the paths in insertion order', () => {
-    deepEqual(Diff.paths(diff), [
+    expect(Diff.paths(diff)).toEqual([
       'package.json',
       'src/main.ts',
       'src/index.ts',
@@ -126,13 +122,13 @@ suite(Diff.paths.name, () => {
   });
 
   test('returns [] for an empty diff', () => {
-    deepEqual(Diff.paths({}), []);
+    expect(Diff.paths({})).toEqual([]);
   });
 });
 
-suite(Diff.statuses.name, () => {
+describe('statuses', () => {
   test('returns the statuses in insertion order', () => {
-    deepEqual(Diff.statuses(diff), [
+    expect(Diff.statuses(diff)).toEqual([
       Diff.Status.Unknown,
       Diff.Status.Added,
       Diff.Status.Deleted,
@@ -143,170 +139,168 @@ suite(Diff.statuses.name, () => {
   });
 
   test('returns [] for an empty diff', () => {
-    deepEqual(Diff.statuses({}), []);
+    expect(Diff.statuses({})).toEqual([]);
   });
 });
 
-suite(Diff.any.name, () => {
+describe('any', () => {
   test('returns true for a non-empty diff with no paths arg', () => {
-    equal(Diff.any(diff), true);
+    expect(Diff.any(diff)).toBe(true);
   });
 
   test('returns false for an empty diff with no paths arg', () => {
-    equal(Diff.any({}), false);
+    expect(Diff.any({})).toBe(false);
   });
 
   test('returns true when a path matches', () => {
-    equal(Diff.any(diff, 'src/main.ts'), true);
+    expect(Diff.any(diff, 'src/main.ts')).toBe(true);
   });
 
   test('returns true when a glob matches', () => {
-    equal(Diff.any(diff, 'src/**'), true);
+    expect(Diff.any(diff, 'src/**')).toBe(true);
   });
 
   test('accepts an array of globs', () => {
-    equal(Diff.any(diff, ['no/match', 'package.json']), true);
+    expect(Diff.any(diff, ['no/match', 'package.json'])).toBe(true);
   });
 
   test('returns false when nothing matches', () => {
-    equal(Diff.any(diff, 'no/such/path'), false);
+    expect(Diff.any(diff, 'no/such/path')).toBe(false);
   });
 
   test('returns true when a glob matches a dotfile', () => {
-    equal(
+    expect(
       Diff.any({'infra/.terraform.lock.hcl': Diff.Status.Modified}, 'infra/**'),
-      true,
-    );
+    ).toBe(true);
   });
 });
 
-suite(Diff.added.name, () => {
+describe('added', () => {
   test('returns true when an entry is Added', () => {
-    equal(Diff.added(diff), true);
+    expect(Diff.added(diff)).toBe(true);
   });
 
   test('returns false when no entry is Added', () => {
-    equal(Diff.added({'a.ts': Diff.Status.Modified}), false);
+    expect(Diff.added({'a.ts': Diff.Status.Modified})).toBe(false);
   });
 
   test('with paths: true when an Added entry matches the glob', () => {
-    equal(Diff.added(diff, 'src/**'), true);
+    expect(Diff.added(diff, 'src/**')).toBe(true);
   });
 
   test('with paths: false when path matches but no Added entry', () => {
-    equal(Diff.added(diff, 'tsconfig.json'), false);
+    expect(Diff.added(diff, 'tsconfig.json')).toBe(false);
   });
 
   test('with paths: false when status matches but no path matches', () => {
-    equal(Diff.added(diff, 'no/such/path'), false);
+    expect(Diff.added(diff, 'no/such/path')).toBe(false);
   });
 
   test('returns false for an empty diff', () => {
-    equal(Diff.added({}), false);
+    expect(Diff.added({})).toBe(false);
   });
 });
 
-suite(Diff.changed.name, () => {
+describe('changed', () => {
   const withChanged: Diff.Diff = {
     'a.ts': Diff.Status.Changed,
     'b.ts': Diff.Status.Added,
   };
 
   test('returns true when an entry is Changed', () => {
-    equal(Diff.changed(withChanged), true);
+    expect(Diff.changed(withChanged)).toBe(true);
   });
 
   test('returns false when no entry is Changed', () => {
-    equal(Diff.changed(diff), false);
+    expect(Diff.changed(diff)).toBe(false);
   });
 
   test('with paths: true when a Changed entry matches', () => {
-    equal(Diff.changed(withChanged, 'a.ts'), true);
+    expect(Diff.changed(withChanged, 'a.ts')).toBe(true);
   });
 
   test('with paths: false when path matches but no Changed entry', () => {
-    equal(Diff.changed(withChanged, 'b.ts'), false);
+    expect(Diff.changed(withChanged, 'b.ts')).toBe(false);
   });
 });
 
-suite(Diff.deleted.name, () => {
+describe('deleted', () => {
   test('returns true when an entry is Deleted', () => {
-    equal(Diff.deleted(diff), true);
+    expect(Diff.deleted(diff)).toBe(true);
   });
 
   test('returns false when no entry is Deleted', () => {
-    equal(Diff.deleted({'a.ts': Diff.Status.Added}), false);
+    expect(Diff.deleted({'a.ts': Diff.Status.Added})).toBe(false);
   });
 
   test('with paths: true when a Deleted entry matches', () => {
-    equal(Diff.deleted(diff, 'src/index.ts'), true);
+    expect(Diff.deleted(diff, 'src/index.ts')).toBe(true);
   });
 
   test('with paths: false when path matches but no Deleted entry', () => {
-    equal(Diff.deleted(diff, 'src/main.ts'), false);
+    expect(Diff.deleted(diff, 'src/main.ts')).toBe(false);
   });
 });
 
-suite(Diff.modified.name, () => {
+describe('modified', () => {
   test('returns true when an entry is Modified', () => {
-    equal(Diff.modified(diff), true);
+    expect(Diff.modified(diff)).toBe(true);
   });
 
   test('returns false when no entry is Modified', () => {
-    equal(Diff.modified({'a.ts': Diff.Status.Added}), false);
+    expect(Diff.modified({'a.ts': Diff.Status.Added})).toBe(false);
   });
 
   test('with paths: true when a Modified entry matches', () => {
-    equal(Diff.modified(diff, 'src/utils.ts'), true);
+    expect(Diff.modified(diff, 'src/utils.ts')).toBe(true);
   });
 
   test('with paths: true when a Modified dotfile matches the glob', () => {
-    equal(
+    expect(
       Diff.modified(
         {'infra/.terraform.lock.hcl': Diff.Status.Modified},
         'infra/**',
       ),
-      true,
-    );
+    ).toBe(true);
   });
 
   test('with paths: false when path matches but no Modified entry', () => {
-    equal(Diff.modified(diff, 'src/main.ts'), false);
+    expect(Diff.modified(diff, 'src/main.ts')).toBe(false);
   });
 });
 
-suite(Diff.renamed.name, () => {
+describe('renamed', () => {
   test('returns true when an entry is Renamed', () => {
-    equal(Diff.renamed(diff), true);
+    expect(Diff.renamed(diff)).toBe(true);
   });
 
   test('returns false when no entry is Renamed', () => {
-    equal(Diff.renamed({'a.ts': Diff.Status.Added}), false);
+    expect(Diff.renamed({'a.ts': Diff.Status.Added})).toBe(false);
   });
 
   test('with paths: true when a Renamed entry matches', () => {
-    equal(Diff.renamed(diff, 'src/utils.test.ts'), true);
+    expect(Diff.renamed(diff, 'src/utils.test.ts')).toBe(true);
   });
 
   test('with paths: false when path matches but no Renamed entry', () => {
-    equal(Diff.renamed(diff, 'src/main.ts'), false);
+    expect(Diff.renamed(diff, 'src/main.ts')).toBe(false);
   });
 });
 
-suite(Diff.unknown.name, () => {
+describe('unknown', () => {
   test('returns true when an entry is Unknown', () => {
-    equal(Diff.unknown(diff), true);
+    expect(Diff.unknown(diff)).toBe(true);
   });
 
   test('returns false when no entry is Unknown', () => {
-    equal(Diff.unknown({'a.ts': Diff.Status.Added}), false);
+    expect(Diff.unknown({'a.ts': Diff.Status.Added})).toBe(false);
   });
 
   test('with paths: true when an Unknown entry matches', () => {
-    equal(Diff.unknown(diff, '*.json'), true);
+    expect(Diff.unknown(diff, '*.json')).toBe(true);
   });
 
   test('with paths: false when path matches but no Unknown entry', () => {
-    equal(Diff.unknown(diff, 'src/main.ts'), false);
+    expect(Diff.unknown(diff, 'src/main.ts')).toBe(false);
   });
 });
