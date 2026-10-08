@@ -1,13 +1,12 @@
-import {suite, test, type TestContext} from 'node:test';
-import {rejects, throws} from 'node:assert/strict';
-import {deepEqual, equal, ok} from 'node:assert';
+/* eslint-disable @typescript-eslint/no-deprecated -- deprecated exports are still public API, so they're still tested */
 import * as Diff from './diff.ts';
 import {
-  createRepository,
-  supportsSha256,
   type CreateRepositoryOptions,
   type Repository,
+  createRepository,
+  supportsSha256,
 } from './repository.fixture.ts';
+import {describe, expect, onTestFinished, test} from 'vitest';
 
 /**
  * A repository containing each of the shapes a base has to get right:
@@ -23,12 +22,11 @@ import {
  * Only a diff against the empty tree gets all of them right. Destroyed when the
  * test ends, however it ends.
  */
-function useRepository(
-  t: TestContext,
-  options?: CreateRepositoryOptions,
-): Repository {
+function useRepository(options?: CreateRepositoryOptions): Repository {
   const repository = createRepository(options);
-  t.after(() => repository.destroy());
+  onTestFinished(() => {
+    repository.destroy();
+  });
   repository.commit({
     files: {
       'kept.txt': 'kept',
@@ -42,157 +40,154 @@ function useRepository(
   return repository;
 }
 
-suite(Diff.diffAsync.name, () => {
-  test('throws when the base does not exist', async (t) => {
-    const repository = useRepository(t);
-    await rejects(
-      () =>
-        Diff.diffAsync({
-          cwd: repository.cwd,
-          base: 'non-existent-ref',
-          head: 'HEAD',
-        }),
-      {
+describe('diffAsync', () => {
+  test('throws when the base does not exist', async () => {
+    const repository = useRepository();
+    await expect(
+      Diff.diffAsync({
+        cwd: repository.cwd,
+        base: 'non-existent-ref',
+        head: 'HEAD',
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'BASE_DOES_NOT_EXIST',
         message: 'The ref does not exist: non-existent-ref',
         ref: 'non-existent-ref',
-      },
+      }),
     );
   });
 
-  test('throws when the head does not exist', async (t) => {
-    const repository = useRepository(t);
-    await rejects(
-      () =>
-        Diff.diffAsync({
-          cwd: repository.cwd,
-          base: 'main',
-          head: 'non-existent-ref',
-        }),
-      {
+  test('throws when the head does not exist', async () => {
+    const repository = useRepository();
+    await expect(
+      Diff.diffAsync({
+        cwd: repository.cwd,
+        base: 'main',
+        head: 'non-existent-ref',
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'HEAD_DOES_NOT_EXIST',
         message: 'The ref does not exist: non-existent-ref',
         ref: 'non-existent-ref',
-      },
+      }),
     );
   });
 
-  test('reports what changed between two refs', async (t) => {
-    const repository = useRepository(t);
-    deepEqual(
+  test('reports what changed between two refs', async () => {
+    const repository = useRepository();
+    expect(
       await Diff.diffAsync({
         cwd: repository.cwd,
         base: 'HEAD~2',
         head: 'HEAD',
       }),
-      {
-        'added.txt': Diff.Status.Added,
-        'modified.txt': Diff.Status.Modified,
-        'removed.txt': Diff.Status.Deleted,
-      },
-    );
+    ).toEqual({
+      'added.txt': Diff.Status.Added,
+      'modified.txt': Diff.Status.Modified,
+      'removed.txt': Diff.Status.Deleted,
+    });
   });
 
-  test('reports non-ASCII paths unquoted, so globs can match them', async (t) => {
-    const repository = useRepository(t);
+  test('reports non-ASCII paths unquoted, so globs can match them', async () => {
+    const repository = useRepository();
     const diff = await Diff.diffAsync({
       cwd: repository.cwd,
       base: await Diff.emptyTreeAsync({cwd: repository.cwd}),
       head: 'HEAD',
     });
-    ok(Diff.paths(diff).includes('café.txt'));
-    equal(Diff.added(diff, '*.txt'), true);
+    expect(Diff.paths(diff)).toContain('café.txt');
+    expect(Diff.added(diff, '*.txt')).toBe(true);
   });
 });
 
-suite(Diff.diffSync.name, () => {
-  test('throws when the base does not exist', (t) => {
-    const repository = useRepository(t);
-    throws(
-      () =>
-        Diff.diffSync({
-          cwd: repository.cwd,
-          base: 'non-existent-ref',
-          head: 'HEAD',
-        }),
-      {
+describe('diffSync', () => {
+  test('throws when the base does not exist', () => {
+    const repository = useRepository();
+    expect(() =>
+      Diff.diffSync({
+        cwd: repository.cwd,
+        base: 'non-existent-ref',
+        head: 'HEAD',
+      }),
+    ).toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'BASE_DOES_NOT_EXIST',
         message: 'The ref does not exist: non-existent-ref',
         ref: 'non-existent-ref',
-      },
+      }),
     );
   });
 
-  test('throws when the head does not exist', (t) => {
-    const repository = useRepository(t);
-    throws(
-      () =>
-        Diff.diffSync({
-          cwd: repository.cwd,
-          base: 'main',
-          head: 'non-existent-ref',
-        }),
-      {
+  test('throws when the head does not exist', () => {
+    const repository = useRepository();
+    expect(() =>
+      Diff.diffSync({
+        cwd: repository.cwd,
+        base: 'main',
+        head: 'non-existent-ref',
+      }),
+    ).toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'HEAD_DOES_NOT_EXIST',
         message: 'The ref does not exist: non-existent-ref',
         ref: 'non-existent-ref',
-      },
+      }),
     );
   });
 
-  test('reports what changed between two refs', (t) => {
-    const repository = useRepository(t);
-    deepEqual(
+  test('reports what changed between two refs', () => {
+    const repository = useRepository();
+    expect(
       Diff.diffSync({cwd: repository.cwd, base: 'HEAD~2', head: 'HEAD'}),
-      {
-        'added.txt': Diff.Status.Added,
-        'modified.txt': Diff.Status.Modified,
-        'removed.txt': Diff.Status.Deleted,
-      },
-    );
+    ).toEqual({
+      'added.txt': Diff.Status.Added,
+      'modified.txt': Diff.Status.Modified,
+      'removed.txt': Diff.Status.Deleted,
+    });
   });
 });
 
-suite(Diff.emptyTreeAsync.name, () => {
-  test('returns the empty tree id', async (t) => {
-    const repository = useRepository(t);
-    equal(
-      await Diff.emptyTreeAsync({cwd: repository.cwd}),
+describe('emptyTreeAsync', () => {
+  test('returns the empty tree id', async () => {
+    const repository = useRepository();
+    expect(await Diff.emptyTreeAsync({cwd: repository.cwd})).toBe(
       '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
     );
   });
 
-  test('diffing from it reports every file at HEAD as added', async (t) => {
-    const repository = useRepository(t);
+  test('diffing from it reports every file at HEAD as added', async () => {
+    const repository = useRepository();
     const diff = await Diff.diffAsync({
       cwd: repository.cwd,
       base: await Diff.emptyTreeAsync({cwd: repository.cwd}),
       head: 'HEAD',
     });
 
-    deepEqual(Diff.paths(diff).sort(), repository.pathsAtHead().sort());
-    deepEqual([...new Set(Diff.statuses(diff))], [Diff.Status.Added]);
+    expect(Diff.paths(diff).sort()).toEqual(repository.pathsAtHead().sort());
+    expect([...new Set(Diff.statuses(diff))]).toEqual([Diff.Status.Added]);
     // the two a root commit gets wrong
-    equal(Diff.added(diff, 'kept.txt'), true);
-    equal(Diff.any(diff, 'removed.txt'), false);
+    expect(Diff.added(diff, 'kept.txt')).toBe(true);
+    expect(Diff.any(diff, 'removed.txt')).toBe(false);
   });
 
-  test('works in a repository with more than one root commit', async (t) => {
-    const repository = useRepository(t);
+  test('works in a repository with more than one root commit', async () => {
+    const repository = useRepository();
     repository.commitUnrelatedHistory({
       files: {'other.txt': 'other'},
       branch: 'other',
     });
 
     const roots = repository.git('rev-list', '--max-parents=0', 'HEAD');
-    ok(
-      roots.split('\n').length > 1,
+    expect(
+      roots.split('\n').length,
       'expected the fixture to have several root commits',
-    );
+    ).toBeGreaterThan(1);
 
     const diff = await Diff.diffAsync({
       cwd: repository.cwd,
@@ -200,19 +195,18 @@ suite(Diff.emptyTreeAsync.name, () => {
       head: 'HEAD',
     });
 
-    deepEqual(Diff.paths(diff).sort(), repository.pathsAtHead().sort());
-    equal(Diff.added(diff, 'other.txt'), true);
+    expect(Diff.paths(diff).sort()).toEqual(repository.pathsAtHead().sort());
+    expect(Diff.added(diff, 'other.txt')).toBe(true);
   });
 
-  test(
+  // skipped when git cannot create sha256 repositories
+  test.skipIf(!supportsSha256())(
     'asks the repository for its object format',
-    {skip: supportsSha256() ? false : 'git cannot create sha256 repositories'},
-    async (t) => {
-      const repository = useRepository(t, {objectFormat: 'sha256'});
+    async () => {
+      const repository = useRepository({objectFormat: 'sha256'});
 
       const base = await Diff.emptyTreeAsync({cwd: repository.cwd});
-      equal(
-        base,
+      expect(base).toBe(
         '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
       );
 
@@ -223,36 +217,35 @@ suite(Diff.emptyTreeAsync.name, () => {
         base,
         head: 'HEAD',
       });
-      deepEqual(Diff.paths(diff).sort(), repository.pathsAtHead().sort());
+      expect(Diff.paths(diff).sort()).toEqual(repository.pathsAtHead().sort());
     },
   );
 
   test('rejects when cwd is not a repository', async () => {
-    await rejects(() => Diff.emptyTreeAsync({cwd: '/'}));
+    await expect(Diff.emptyTreeAsync({cwd: '/'})).rejects.toThrow();
   });
 });
 
-suite(Diff.emptyTreeSync.name, () => {
-  test('returns the empty tree id', (t) => {
-    const repository = useRepository(t);
-    equal(
-      Diff.emptyTreeSync({cwd: repository.cwd}),
+describe('emptyTreeSync', () => {
+  test('returns the empty tree id', () => {
+    const repository = useRepository();
+    expect(Diff.emptyTreeSync({cwd: repository.cwd})).toBe(
       '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
     );
   });
 
-  test('works in a repository with more than one root commit', (t) => {
-    const repository = useRepository(t);
+  test('works in a repository with more than one root commit', () => {
+    const repository = useRepository();
     repository.commitUnrelatedHistory({
       files: {'other.txt': 'other'},
       branch: 'other',
     });
 
     const roots = repository.git('rev-list', '--max-parents=0', 'HEAD');
-    ok(
-      roots.split('\n').length > 1,
+    expect(
+      roots.split('\n').length,
       'expected the fixture to have several root commits',
-    );
+    ).toBeGreaterThan(1);
 
     const diff = Diff.diffSync({
       cwd: repository.cwd,
@@ -260,96 +253,94 @@ suite(Diff.emptyTreeSync.name, () => {
       head: 'HEAD',
     });
 
-    deepEqual(Diff.paths(diff).sort(), repository.pathsAtHead().sort());
+    expect(Diff.paths(diff).sort()).toEqual(repository.pathsAtHead().sort());
   });
 });
 
-suite(Diff.firstCommitAsync.name, () => {
-  test('returns the empty tree id', async (t) => {
-    const repository = useRepository(t);
-    equal(
-      await Diff.firstCommitAsync({cwd: repository.cwd}),
+describe('firstCommitAsync', () => {
+  test('returns the empty tree id', async () => {
+    const repository = useRepository();
+    expect(await Diff.firstCommitAsync({cwd: repository.cwd})).toBe(
       await Diff.emptyTreeAsync({cwd: repository.cwd}),
     );
   });
 });
 
-suite(Diff.firstCommitSync.name, () => {
-  test('returns the empty tree id', (t) => {
-    const repository = useRepository(t);
-    equal(
-      Diff.firstCommitSync({cwd: repository.cwd}),
+describe('firstCommitSync', () => {
+  test('returns the empty tree id', () => {
+    const repository = useRepository();
+    expect(Diff.firstCommitSync({cwd: repository.cwd})).toBe(
       Diff.emptyTreeSync({cwd: repository.cwd}),
     );
   });
 });
 
-suite(Diff.isBaseDoesNotExistError.name, () => {
-  test('true for a missing base, false for a missing head', async (t) => {
-    const repository = useRepository(t);
+describe('isBaseDoesNotExistError', () => {
+  test('true for a missing base, false for a missing head', async () => {
+    const repository = useRepository();
 
     const missingBase = await Diff.diffAsync({
       cwd: repository.cwd,
       base: 'non-existent-ref',
       head: 'HEAD',
     }).catch((error: unknown) => error);
-    equal(Diff.isBaseDoesNotExistError(missingBase), true);
-    equal(Diff.isHeadDoesNotExistError(missingBase), false);
+    expect(Diff.isBaseDoesNotExistError(missingBase)).toBe(true);
+    expect(Diff.isHeadDoesNotExistError(missingBase)).toBe(false);
 
     const missingHead = await Diff.diffAsync({
       cwd: repository.cwd,
       base: 'main',
       head: 'non-existent-ref',
     }).catch((error: unknown) => error);
-    equal(Diff.isBaseDoesNotExistError(missingHead), false);
+    expect(Diff.isBaseDoesNotExistError(missingHead)).toBe(false);
   });
 
-  test('true for a base sha the repository does not have', async (t) => {
+  test('true for a base sha the repository does not have', async () => {
     // a full-length object id is reported as `bad object`, not `bad revision`
-    const repository = useRepository(t);
+    const repository = useRepository();
     const error = await Diff.diffAsync({
       cwd: repository.cwd,
       base: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
       head: 'HEAD',
     }).catch((error: unknown) => error);
-    equal(Diff.isBaseDoesNotExistError(error), true);
+    expect(Diff.isBaseDoesNotExistError(error)).toBe(true);
   });
 
-  test('false for a failure that is not a missing ref', async (t) => {
-    const repository = useRepository(t);
+  test('false for a failure that is not a missing ref', async () => {
+    const repository = useRepository();
     repository.destroy();
     const error = await Diff.diffAsync({cwd: repository.cwd}).catch(
       (error: unknown) => error,
     );
-    ok(error instanceof Error, 'expected the diff to fail');
-    equal(Diff.isBaseDoesNotExistError(error), false);
-    equal(Diff.isBadRevisionError(error), false);
+    expect(error, 'expected the diff to fail').toBeInstanceOf(Error);
+    expect(Diff.isBaseDoesNotExistError(error)).toBe(false);
+    expect(Diff.isBadRevisionError(error)).toBe(false);
   });
 });
 
-suite(Diff.isHeadDoesNotExistError.name, () => {
-  test('true for a missing head, false for a missing base', async (t) => {
-    const repository = useRepository(t);
+describe('isHeadDoesNotExistError', () => {
+  test('true for a missing head, false for a missing base', async () => {
+    const repository = useRepository();
 
     const missingHead = await Diff.diffAsync({
       cwd: repository.cwd,
       base: 'main',
       head: 'non-existent-ref',
     }).catch((error: unknown) => error);
-    equal(Diff.isHeadDoesNotExistError(missingHead), true);
+    expect(Diff.isHeadDoesNotExistError(missingHead)).toBe(true);
 
     const missingBase = await Diff.diffAsync({
       cwd: repository.cwd,
       base: 'non-existent-ref',
       head: 'HEAD',
     }).catch((error: unknown) => error);
-    equal(Diff.isHeadDoesNotExistError(missingBase), false);
+    expect(Diff.isHeadDoesNotExistError(missingBase)).toBe(false);
   });
 });
 
-suite(Diff.isBadRevisionError.name, () => {
-  test('stays true for either missing ref', async (t) => {
-    const repository = useRepository(t);
+describe('isBadRevisionError', () => {
+  test('stays true for either missing ref', async () => {
+    const repository = useRepository();
     for (const options of [
       {base: 'non-existent-ref', head: 'HEAD'},
       {base: 'main', head: 'non-existent-ref'},
@@ -358,21 +349,20 @@ suite(Diff.isBadRevisionError.name, () => {
         cwd: repository.cwd,
         ...options,
       }).catch((error: unknown) => error);
-      equal(Diff.isBadRevisionError(error), true);
+      expect(Diff.isBadRevisionError(error)).toBe(true);
     }
   });
 
   test('still recognises an error from an older copy of this library', () => {
     // 0.5 threw this shape, with no `ref`. A consumer can have both versions
     // resolved at once, which is the whole reason these guards duck-type.
-    equal(
+    expect(
       Diff.isBadRevisionError({
         name: 'GitDiffError',
         code: 'BAD_REVISION',
         message: 'The ref does not exist: v1.2.3',
       }),
-      true,
-    );
+    ).toBe(true);
   });
 });
 
@@ -391,7 +381,7 @@ interface ForkedRepository extends Repository {
 
 /**
  * The error a call rejected with, for assertions that need the value itself
- * rather than a shape to match — `rejects` cannot run a type guard over it.
+ * rather than a shape to match — `.rejects` cannot run a type guard over it.
  */
 async function rejection(fn: () => Promise<unknown>): Promise<unknown> {
   try {
@@ -402,9 +392,11 @@ async function rejection(fn: () => Promise<unknown>): Promise<unknown> {
   throw new Error('Expected the call to reject');
 }
 
-function useForkedRepository(t: TestContext): ForkedRepository {
+function useForkedRepository(): ForkedRepository {
   const repository = createRepository();
-  t.after(() => repository.destroy());
+  onTestFinished(() => {
+    repository.destroy();
+  });
   repository.commit({files: {'shared.txt': 'shared'}});
   const forkPoint = repository.git('rev-parse', 'HEAD');
 
@@ -418,17 +410,16 @@ function useForkedRepository(t: TestContext): ForkedRepository {
   return Object.assign(repository, {forkPoint});
 }
 
-suite(Diff.mergeBaseAsync.name, () => {
-  test('returns the commit the refs forked at', async (t) => {
-    const repository = useForkedRepository(t);
+describe('mergeBaseAsync', () => {
+  test('returns the commit the refs forked at', async () => {
+    const repository = useForkedRepository();
 
-    equal(
+    expect(
       await Diff.mergeBaseAsync({
         cwd: repository.cwd,
         refs: ['main', 'HEAD'],
       }),
-      repository.forkPoint,
-    );
+    ).toBe(repository.forkPoint);
   });
 
   // The other tests in this suite pin the error codes, which are internal
@@ -437,8 +428,8 @@ suite(Diff.mergeBaseAsync.name, () => {
   // failure —
   // `isBaseDoesNotExistError` included, since `merge-base` has no base to
   // attribute a rejected ref to and so classifies it as `BAD_REVISION`.
-  test('the guards tell a missing merge base from a missing ref', async (t) => {
-    const repository = useForkedRepository(t);
+  test('the guards tell a missing merge base from a missing ref', async () => {
+    const repository = useForkedRepository();
     repository.git('checkout', '--quiet', '--orphan', 'unrelated');
     repository.git('rm', '--quiet', '-rf', '.');
     repository.commit({files: {'unrelated.txt': 'unrelated'}});
@@ -447,37 +438,36 @@ suite(Diff.mergeBaseAsync.name, () => {
     const noMergeBase = await rejection(() =>
       Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['main', 'unrelated']}),
     );
-    ok(Diff.isNoMergeBaseError(noMergeBase));
-    ok(!Diff.isRefDoesNotExistError(noMergeBase));
+    expect(Diff.isNoMergeBaseError(noMergeBase)).toBe(true);
+    expect(Diff.isRefDoesNotExistError(noMergeBase)).toBe(false);
 
     // the shape of a CI job that never fetched the branch it is comparing to
     const missingRef = await rejection(() =>
       Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['origin/main', 'HEAD']}),
     );
-    ok(Diff.isRefDoesNotExistError(missingRef));
-    ok(!Diff.isNoMergeBaseError(missingRef));
-    ok(!Diff.isBaseDoesNotExistError(missingRef));
+    expect(Diff.isRefDoesNotExistError(missingRef)).toBe(true);
+    expect(Diff.isNoMergeBaseError(missingRef)).toBe(false);
+    expect(Diff.isBaseDoesNotExistError(missingRef)).toBe(false);
   });
 
-  test('is symmetric', async (t) => {
-    const repository = useForkedRepository(t);
+  test('is symmetric', async () => {
+    const repository = useForkedRepository();
 
-    equal(
+    expect(
       await Diff.mergeBaseAsync({
         cwd: repository.cwd,
         refs: ['HEAD', 'main'],
       }),
-      repository.forkPoint,
-    );
+    ).toBe(repository.forkPoint);
   });
 
   // the reason this exists: against `main` itself the branch also looks like it
   // *deleted* the file `main` added after the fork, because a diff compares two
   // trees rather than replaying commits
-  test('is the base that reports only what the branch changed', async (t) => {
-    const repository = useForkedRepository(t);
+  test('is the base that reports only what the branch changed', async () => {
+    const repository = useForkedRepository();
 
-    deepEqual(
+    expect(
       await Diff.diffAsync({
         cwd: repository.cwd,
         base: await Diff.mergeBaseAsync({
@@ -486,43 +476,41 @@ suite(Diff.mergeBaseAsync.name, () => {
         }),
         head: 'HEAD',
       }),
-      {'on-feature.txt': Diff.Status.Added},
-    );
+    ).toEqual({'on-feature.txt': Diff.Status.Added});
 
-    deepEqual(
+    expect(
       await Diff.diffAsync({cwd: repository.cwd, base: 'main', head: 'HEAD'}),
-      {
-        'on-feature.txt': Diff.Status.Added,
-        'on-main.txt': Diff.Status.Deleted,
-      },
-    );
+    ).toEqual({
+      'on-feature.txt': Diff.Status.Added,
+      'on-main.txt': Diff.Status.Deleted,
+    });
   });
 
-  test('throws when the refs share no common ancestor', async (t) => {
-    const repository = useForkedRepository(t);
+  test('throws when the refs share no common ancestor', async () => {
+    const repository = useForkedRepository();
     repository.git('checkout', '--quiet', '--orphan', 'unrelated');
     repository.git('rm', '--quiet', '-rf', '.');
     repository.commit({files: {'unrelated.txt': 'unrelated'}});
 
-    await rejects(
-      () =>
-        Diff.mergeBaseAsync({
-          cwd: repository.cwd,
-          refs: ['main', 'unrelated'],
-        }),
-      {
+    await expect(
+      Diff.mergeBaseAsync({
+        cwd: repository.cwd,
+        refs: ['main', 'unrelated'],
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'NO_MERGE_BASE',
         message: 'The refs share no common ancestor: main, unrelated',
-      },
+      }),
     );
   });
 
   // git exits 1 with an empty stdout for "no merge base", but it may still have
   // written a warning — requiring stderr to be empty would send this case down
   // the unclassified path and defeat the documented fallback
-  test('classifies a missing merge base even when git warns alongside it', async (t) => {
-    const repository = useForkedRepository(t);
+  test('classifies a missing merge base even when git warns alongside it', async () => {
+    const repository = useForkedRepository();
     repository.git('checkout', '--quiet', '--orphan', 'dup');
     repository.git('rm', '--quiet', '-rf', '.');
     repository.commit({files: {'dup.txt': 'dup'}});
@@ -530,90 +518,90 @@ suite(Diff.mergeBaseAsync.name, () => {
     repository.git('tag', 'dup', 'dup');
     repository.git('checkout', '--quiet', 'main');
 
-    await rejects(
-      () => Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['main', 'dup']}),
-      {name: 'GitDiffError', code: 'NO_MERGE_BASE'},
+    await expect(
+      Diff.mergeBaseAsync({cwd: repository.cwd, refs: ['main', 'dup']}),
+    ).rejects.toThrow(
+      expect.objectContaining({name: 'GitDiffError', code: 'NO_MERGE_BASE'}),
     );
   });
 
   // without `--`, git reads this as the reflog-dependent option the docs say is
   // not offered — and answers successfully
-  test('treats a ref beginning with a dash as a ref, not an option', async (t) => {
-    const repository = useForkedRepository(t);
+  test('treats a ref beginning with a dash as a ref, not an option', async () => {
+    const repository = useForkedRepository();
 
-    await rejects(
-      () =>
-        Diff.mergeBaseAsync({
-          cwd: repository.cwd,
-          refs: ['--fork-point', 'HEAD'],
-        }),
-      {name: 'GitDiffError', ref: '--fork-point'},
+    await expect(
+      Diff.mergeBaseAsync({
+        cwd: repository.cwd,
+        refs: ['--fork-point', 'HEAD'],
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({name: 'GitDiffError', ref: '--fork-point'}),
     );
   });
 
-  test('a missing ref is a ref failure, not a missing merge base', async (t) => {
-    const repository = useForkedRepository(t);
+  test('a missing ref is a ref failure, not a missing merge base', async () => {
+    const repository = useForkedRepository();
 
-    await rejects(
-      () =>
-        Diff.mergeBaseAsync({
-          cwd: repository.cwd,
-          refs: ['non-existent-ref', 'HEAD'],
-        }),
-      {
+    await expect(
+      Diff.mergeBaseAsync({
+        cwd: repository.cwd,
+        refs: ['non-existent-ref', 'HEAD'],
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'BAD_REVISION',
         message: 'The ref does not exist: non-existent-ref',
         ref: 'non-existent-ref',
-      },
+      }),
     );
   });
 });
 
-suite(Diff.mergeBaseSync.name, () => {
-  test('a missing ref is a ref failure, not a missing merge base', (t) => {
-    const repository = useForkedRepository(t);
+describe('mergeBaseSync', () => {
+  test('a missing ref is a ref failure, not a missing merge base', () => {
+    const repository = useForkedRepository();
 
-    throws(
-      () =>
-        Diff.mergeBaseSync({
-          cwd: repository.cwd,
-          refs: ['non-existent-ref', 'HEAD'],
-        }),
-      {
+    expect(() =>
+      Diff.mergeBaseSync({
+        cwd: repository.cwd,
+        refs: ['non-existent-ref', 'HEAD'],
+      }),
+    ).toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'BAD_REVISION',
         message: 'The ref does not exist: non-existent-ref',
         ref: 'non-existent-ref',
-      },
+      }),
     );
   });
 
-  test('returns the commit the refs forked at', (t) => {
-    const repository = useForkedRepository(t);
+  test('returns the commit the refs forked at', () => {
+    const repository = useForkedRepository();
 
-    equal(
+    expect(
       Diff.mergeBaseSync({cwd: repository.cwd, refs: ['main', 'HEAD']}),
-      repository.forkPoint,
-    );
+    ).toBe(repository.forkPoint);
   });
 
   // the sync path reads the exit status from `status` rather than `code`, so
   // classification has to be proven separately from the async one
-  test('throws when the refs share no common ancestor', (t) => {
-    const repository = useForkedRepository(t);
+  test('throws when the refs share no common ancestor', () => {
+    const repository = useForkedRepository();
     repository.git('checkout', '--quiet', '--orphan', 'unrelated');
     repository.git('rm', '--quiet', '-rf', '.');
     repository.commit({files: {'unrelated.txt': 'unrelated'}});
 
-    throws(
-      () =>
-        Diff.mergeBaseSync({cwd: repository.cwd, refs: ['main', 'unrelated']}),
-      {
+    expect(() =>
+      Diff.mergeBaseSync({cwd: repository.cwd, refs: ['main', 'unrelated']}),
+    ).toThrow(
+      expect.objectContaining({
         name: 'GitDiffError',
         code: 'NO_MERGE_BASE',
         message: 'The refs share no common ancestor: main, unrelated',
-      },
+      }),
     );
   });
 });

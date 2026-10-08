@@ -1,7 +1,5 @@
-import {beforeEach, suite, test} from 'node:test';
-import {deepEqual, equal, ok, rejects, throws} from 'node:assert';
-import {mock} from 'node:test';
-import {promisify} from 'node:util';
+import * as Diff from './diff.ts';
+import {beforeEach, describe, expect, test, vi} from 'vitest';
 import vm from 'node:vm';
 
 /**
@@ -19,55 +17,62 @@ interface Call {
   options: {env?: NodeJS.ProcessEnv; maxBuffer?: number};
 }
 
-const calls: Call[] = [];
-let results: Result[] = [];
+// `vi.mock` is hoisted above everything else in this file, so the state its
+// factory closes over has to be hoisted with it
+const {calls, results, next} = vi.hoisted(() => {
+  const calls: Call[] = [];
+  const results: Result[] = [];
 
-function next(call: Call): string {
-  calls.push(call);
-  const result = results.shift() ?? {stdout: ''};
-  if ('error' in result) throw result.error;
-  return result.stdout;
-}
+  function next(call: Call): string {
+    calls.push(call);
+    const result = results.shift() ?? {stdout: ''};
+    if ('error' in result) throw result.error;
+    return result.stdout;
+  }
 
-function execFileSyncMock(
-  cmd: string,
-  args: string[],
-  options: Call['options'],
-): string {
-  return next({cmd, args, options});
-}
+  return {calls, results, next};
+});
 
-/**
- * Only ever reached through `promisify`, which honours this symbol on the real
- * `execFile` to resolve `{stdout, stderr}` rather than stdout alone. The
- * callback form is deliberately not implemented: `diff.ts` doesn't use it, and
- * a stand-in that dropped `stderr` would let the classification tests below
- * pass against a broken classifier.
- */
-function execFileMock(): never {
-  throw new Error(
-    'execFile was called with a callback, which diff.ts does not do',
-  );
-}
+vi.mock('node:child_process', async () => {
+  // a static import isn't available yet: this factory runs before them
+  const {promisify} = await import('node:util');
 
-Reflect.set(
-  execFileMock,
-  promisify.custom,
-  async (
+  function execFileSyncMock(
     cmd: string,
     args: string[],
     options: Call['options'],
-  ): Promise<{stdout: string; stderr: string}> => ({
-    stdout: next({cmd, args, options}),
-    stderr: '',
-  }),
-);
+  ): string {
+    return next({cmd, args, options});
+  }
 
-mock.module('node:child_process', {
-  namedExports: {execFile: execFileMock, execFileSync: execFileSyncMock},
+  /**
+   * Only ever reached through `promisify`, which honours this symbol on the
+   * real `execFile` to resolve `{stdout, stderr}` rather than stdout alone. The
+   * callback form is deliberately not implemented: `diff.ts` doesn't use it,
+   * and a stand-in that dropped `stderr` would let the classification tests
+   * below pass against a broken classifier.
+   */
+  function execFileMock(): never {
+    throw new Error(
+      'execFile was called with a callback, which diff.ts does not do',
+    );
+  }
+
+  // async so that a scripted error rejects, as the real one would, rather than
+  // throwing synchronously
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async function execFileAsyncMock(
+    cmd: string,
+    args: string[],
+    options: Call['options'],
+  ): Promise<{stdout: string; stderr: string}> {
+    return {stdout: next({cmd, args, options}), stderr: ''};
+  }
+
+  Reflect.set(execFileMock, promisify.custom, execFileAsyncMock);
+
+  return {execFile: execFileMock, execFileSync: execFileSyncMock};
 });
-
-const Diff = await import('./diff.ts');
 
 /**
  * An error from another realm, as produced by a bundler boundary, a
@@ -75,46 +80,48 @@ const Diff = await import('./diff.ts');
  * `instanceof Error` is false, but it is an error in every way that matters.
  */
 function foreignError(stderr: string): unknown {
-  const error = vm.runInNewContext("new Error('Command failed')");
+  const error: unknown = vm.runInNewContext("new Error('Command failed')");
   Reflect.set(Object(error), 'stderr', stderr);
   return error;
 }
 
 beforeEach(() => {
   calls.length = 0;
-  results = [];
+  results.length = 0;
 });
 
-suite('git invocation', () => {
+describe('git invocation', () => {
   test('async: pins the locale and forbids prompting', async () => {
-    results = [{stdout: ''}];
+    results.push({stdout: ''});
     await Diff.diffAsync();
-    equal(calls[0]?.options.env?.['LC_ALL'], 'C');
-    equal(calls[0]?.options.env?.['GIT_TERMINAL_PROMPT'], '0');
+    expect(calls[0]?.options.env?.['LC_ALL']).toBe('C');
+    expect(calls[0]?.options.env?.['GIT_TERMINAL_PROMPT']).toBe('0');
   });
 
   test('sync: pins the locale and forbids prompting', () => {
-    results = [{stdout: ''}];
+    results.push({stdout: ''});
     Diff.diffSync();
-    equal(calls[0]?.options.env?.['LC_ALL'], 'C');
-    equal(calls[0]?.options.env?.['GIT_TERMINAL_PROMPT'], '0');
+    expect(calls[0]?.options.env?.['LC_ALL']).toBe('C');
+    expect(calls[0]?.options.env?.['GIT_TERMINAL_PROMPT']).toBe('0');
   });
 
   test('inherits the rest of the environment', () => {
-    results = [{stdout: ''}];
+    results.push({stdout: ''});
     Diff.diffSync();
-    equal(calls[0]?.options.env?.['PATH'], process.env['PATH']);
+    expect(calls[0]?.options.env?.['PATH']).toBe(process.env['PATH']);
   });
 
   test('raises maxBuffer above the default, which a full diff overruns', () => {
-    results = [{stdout: ''}, {stdout: 'sha1\n'}];
+    results.push({stdout: ''}, {stdout: 'sha1\n'});
     Diff.diffSync();
     Diff.emptyTreeSync();
-    for (const call of calls) ok((call.options.maxBuffer ?? 0) > 1024 * 1024);
+    for (const call of calls) {
+      expect(call.options.maxBuffer ?? 0).toBeGreaterThan(1024 * 1024);
+    }
   });
 });
 
-suite('error classification', () => {
+describe('error classification', () => {
   const stderr = "fatal: bad revision 'non-existent-ref'\n";
   const expected = {
     name: 'GitDiffError',
@@ -124,59 +131,69 @@ suite('error classification', () => {
   };
 
   test('async: classifies a missing ref raised in another realm', async () => {
-    results = [{error: foreignError(stderr)}];
-    await rejects(() => Diff.diffAsync({base: 'non-existent-ref'}), expected);
+    results.push({error: foreignError(stderr)});
+    await expect(Diff.diffAsync({base: 'non-existent-ref'})).rejects.toThrow(
+      expect.objectContaining(expected),
+    );
   });
 
   test('sync: classifies a missing ref raised in another realm', () => {
-    results = [{error: foreignError(stderr)}];
-    throws(() => Diff.diffSync({base: 'non-existent-ref'}), expected);
+    results.push({error: foreignError(stderr)});
+    expect(() => Diff.diffSync({base: 'non-existent-ref'})).toThrow(
+      expect.objectContaining(expected),
+    );
   });
 
   test('a ref matching neither argument is still a GitDiffError', () => {
     // Real git echoes the argument verbatim, so this shouldn't happen — the
     // branch exists so an unattributable ref failure doesn't escape as a raw
     // exec error. Only a mock can reach it.
-    results = [{error: foreignError(stderr)}];
-    throws(() => Diff.diffSync({base: 'main', head: 'HEAD'}), {
-      name: 'GitDiffError',
-      code: 'BAD_REVISION',
-      ref: 'non-existent-ref',
-    });
+    results.push({error: foreignError(stderr)});
+    expect(() => Diff.diffSync({base: 'main', head: 'HEAD'})).toThrow(
+      expect.objectContaining({
+        name: 'GitDiffError',
+        code: 'BAD_REVISION',
+        ref: 'non-existent-ref',
+      }),
+    );
   });
 
   test('a base that is also the head is reported as the base', () => {
-    results = [{error: foreignError(stderr)}];
-    throws(
-      () => Diff.diffSync({base: 'non-existent-ref', head: 'non-existent-ref'}),
-      {code: 'BASE_DOES_NOT_EXIST'},
-    );
+    results.push({error: foreignError(stderr)});
+    expect(() =>
+      Diff.diffSync({base: 'non-existent-ref', head: 'non-existent-ref'}),
+    ).toThrow(expect.objectContaining({code: 'BASE_DOES_NOT_EXIST'}));
   });
 
   test('rethrows an error it cannot classify', () => {
     const error = new Error('spawn ENOENT');
-    results = [{error}];
-    throws(
-      () => Diff.diffSync(),
-      (thrown: unknown) => thrown === error,
-    );
+    results.push({error});
+    let thrown: unknown;
+    try {
+      Diff.diffSync();
+    } catch (caught) {
+      thrown = caught;
+    }
+    expect(thrown).toBe(error);
   });
 
   test('rejects an object format it has no id for', () => {
-    results = [{stdout: 'sha512\n'}];
-    throws(() => Diff.emptyTreeSync(), {
-      name: 'GitDiffError',
-      code: 'UNSUPPORTED_OBJECT_FORMAT',
-      message: 'Unsupported object format: sha512',
-    });
+    results.push({stdout: 'sha512\n'});
+    expect(() => Diff.emptyTreeSync()).toThrow(
+      expect.objectContaining({
+        name: 'GitDiffError',
+        code: 'UNSUPPORTED_OBJECT_FORMAT',
+        message: 'Unsupported object format: sha512',
+      }),
+    );
   });
 });
 
-suite('command arguments', () => {
+describe('command arguments', () => {
   test('diff passes -- so a ref that shadows a path is unambiguous', () => {
-    results = [{stdout: ''}];
+    results.push({stdout: ''});
     Diff.diffSync({base: 'main', head: 'HEAD'});
-    deepEqual(calls[0]?.args, [
+    expect(calls[0]?.args).toEqual([
       '-c',
       'core.quotePath=false',
       'diff',
@@ -188,8 +205,8 @@ suite('command arguments', () => {
   });
 
   test('the empty tree id is asked of the repository', () => {
-    results = [{stdout: 'sha1\n'}];
+    results.push({stdout: 'sha1\n'});
     Diff.emptyTreeSync();
-    deepEqual(calls[0]?.args, ['rev-parse', '--show-object-format']);
+    expect(calls[0]?.args).toEqual(['rev-parse', '--show-object-format']);
   });
 });

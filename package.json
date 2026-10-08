@@ -18,23 +18,30 @@
     "access": "public"
   },
   "devDependencies": {
-    "@jameslnewell/prettier-config": "^2.0.0",
-    "@jameslnewell/typescript-config": "^6.0.0",
+    "@jameslnewell/eslint-config": "^7.0.0",
+    "@jameslnewell/prettier-config": "^7.0.0",
+    "@jameslnewell/typescript-config": "^7.0.0",
+    "@jameslnewell/vitest-config": "^7.0.0",
     "@types/debug": "^4.1.13",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "eslint": "^9.39.5",
     "prettier": "^3.9.9",
-    "typescript": "^5.8.3"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
   },
   "prettier": "@jameslnewell/prettier-config",
   "scripts": {
     "formatting": "prettier --check .",
     "formatting:fix": "prettier --write .",
+    "linting": "eslint .",
+    "linting:fix": "eslint --fix .",
     "typecheck": "tsc --project tsconfig.json",
     "build": "tsc --project tsconfig.build.json",
     "build:watch": "tsc --project tsconfig.build.json --watch",
-    "test": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --experimental-test-module-mocks --test \"src/**/*.test.ts\"",
-    "test:watch": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types --experimental-test-module-mocks --test --watch \"src/**/*.test.ts\"",
-    "dev": "node --no-warnings --disable-warning=ExperimentalWarning  --experimental-strip-types dev.ts"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@types/picomatch": "^4.0.3",

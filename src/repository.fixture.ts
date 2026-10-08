@@ -1,5 +1,5 @@
-import {execFileSync} from 'node:child_process';
 import {mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 
@@ -83,7 +83,9 @@ export function createRepository({
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
 
-  const destroy = (): void => rmSync(cwd, {recursive: true, force: true});
+  const destroy = (): void => {
+    rmSync(cwd, {recursive: true, force: true});
+  };
 
   const commit = ({files, message = 'commit'}: CommitOptions): void => {
     for (const [path, content] of Object.entries(files)) {
