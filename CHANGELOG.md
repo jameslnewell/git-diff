@@ -1,3 +1,27 @@
+# v0.7.3 (Thu Oct 08 2026)
+
+#### 🐛 Bug Fix
+
+- Adopt @jameslnewell configs v7: TypeScript 7, ESLint and Vitest [#50](https://github.com/jameslnewell/git-diff/pull/50) ([@jameslnewell](https://github.com/jameslnewell))
+
+#### 🔩 Dependency Updates
+
+- Bump actions/checkout from 4 to 7 [#9](https://github.com/jameslnewell/git-diff/pull/9) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump actions/setup-node from 4 to 7 [#8](https://github.com/jameslnewell/git-diff/pull/8) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump @jameslnewell/typescript-config from 5.0.1 to 6.0.0 [#16](https://github.com/jameslnewell/git-diff/pull/16) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump @jameslnewell/prettier-config from 1.2.1 to 2.0.0 [#13](https://github.com/jameslnewell/git-diff/pull/13) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump @types/node from 22.15.21 to 26.6.4 [#45](https://github.com/jameslnewell/git-diff/pull/45) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump actions/download-artifact from 4 to 8 [#11](https://github.com/jameslnewell/git-diff/pull/11) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump actions/cache from 4 to 5 [#10](https://github.com/jameslnewell/git-diff/pull/10) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+- Bump dependabot/fetch-metadata from 2 to 3 [#7](https://github.com/jameslnewell/git-diff/pull/7) ([@dependabot[bot]](https://github.com/dependabot[bot]))
+
+#### Authors: 2
+
+- [@dependabot[bot]](https://github.com/dependabot[bot])
+- James Newell ([@jameslnewell](https://github.com/jameslnewell))
+
+---
+
 # v0.7.2 (Wed Oct 07 2026)
 
 #### 🐛 Bug Fix
