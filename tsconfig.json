@@ -1,13 +1,13 @@
 {
   "extends": "@jameslnewell/typescript-config",
   "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
+    "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
+    "noEmit": true,
     "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "*.mjs"]
+  "include": ["src"]
 }
