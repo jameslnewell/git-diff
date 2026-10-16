@@ -23,7 +23,7 @@
     "@jameslnewell/typescript-config": "^7.0.0",
     "@jameslnewell/vitest-config": "^7.0.0",
     "@types/debug": "^4.1.13",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^9.39.5",
     "prettier": "^3.9.9",
