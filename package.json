@@ -28,7 +28,7 @@
     "eslint": "^9.39.5",
     "prettier": "^3.9.9",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vitest": "^5.0.3"
   },
   "prettier": "@jameslnewell/prettier-config",
